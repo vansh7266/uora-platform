@@ -89,4 +89,4 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-Developed with ❤️ for the **IICPC Summer Hackathon 2026**.
+Developed for the **IICPC Summer Hackathon 2026**.
