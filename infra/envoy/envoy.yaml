@@ -1,0 +1,93 @@
+# UORA Envoy Sidecar Configuration
+# Captures HTTP request/response bodies + microsecond timestamps
+
+static_resources:
+  listeners:
+    - name: uora_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: uora_ingress
+                codec_type: AUTO
+                route_config:
+                  name: uora_route
+                  virtual_hosts:
+                    - name: uora_backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: contestant_backend
+                            timeout: 30s
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_authz
+                        timeout: 0.5s
+                      transport_api_version: V3
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          local start_time = request_handle:nowMs()
+                          request_handle:streamInfo():dynamicMetadata():set("uora", "start_time", start_time)
+                        end
+                        function envoy_on_response(response_handle)
+                          local start_time = response_handle:streamInfo():dynamicMetadata():get("uora")["start_time"]
+                          local end_time = response_handle:nowMs()
+                          local latency = end_time - start_time
+                          -- Handle potential nil if Lua filter is skipped or timing fails
+                          if latency then
+                            response_handle:headers():add("x-uora-latency-ms", tostring(latency))
+                          end
+                        end
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: contestant_backend
+      connect_timeout: 5s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: contestant_backend
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: host.docker.internal
+                      port_value: 8080
+
+    - name: ext_authz
+      connect_timeout: 0.5s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ext_authz
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: host.docker.internal
+                      port_value: 9001
+
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
