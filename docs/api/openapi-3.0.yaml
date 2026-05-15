@@ -1,0 +1,568 @@
+openapi: "3.0.3"
+
+info:
+  title: UORA Contestant Engine API
+  description: |
+    ## UORA — Unified Orderbook Resilience Architecture
+    ### Contestant Implementation Contract v1.0
+
+    This document defines the **exact API your trading engine must expose** when
+    containerized and deployed in the UORA sandbox environment.
+
+    Your engine will be bombarded by UORA's distributed bot fleet. Bots will send
+    all four order types (limit, market, ioc, fok) across all endpoints simultaneously.
+
+    ### Rules
+    - Your engine **must** listen on port `8080`
+    - All timestamps are **nanoseconds since Unix epoch**
+    - Price fields are **decimal strings** (e.g. `"100.50"`) to avoid float precision loss
+    - `order_id` must be globally unique per submission run (use UUID v4)
+    - All endpoints must respond within **5000ms** (5s hard timeout — Envoy will kill the request)
+
+    ### WebSocket Stream (`/api/v1/stream`)
+    OpenAPI 3.0 does not natively describe WebSocket protocols.
+    Connect via standard WS upgrade: `ws://host:8080/api/v1/stream`
+    Server must push `TradeEvent` and `DepthUpdateEvent` messages as JSON.
+    See schemas below.
+
+  version: "1.0.0"
+  contact:
+    name: UORA Platform
+    email: uora@iicpc2026.dev
+
+servers:
+  - url: http://localhost:8080
+    description: Local development (contestant's engine)
+  - url: http://sandbox:8080
+    description: UORA sandbox environment
+
+tags:
+  - name: Contestant Engine
+    description: All endpoints your engine must implement
+
+paths:
+  /api/v1/order:
+    post:
+      tags: [Contestant Engine]
+      summary: Submit an order
+      description: |
+        Submit a new order to your matching engine.
+
+        **Order Type Behavior:**
+        - `limit`: Add to book if not immediately matchable. Partial fills allowed.
+        - `market`: Execute immediately at best available price. Discard unfilled remainder.
+        - `ioc`: Fill as much as possible at price limit. Cancel remainder immediately.
+        - `fok`: Fill entire quantity immediately or cancel the whole order. No partials.
+
+        **Price-Time Priority:** At each price level, orders are filled in FIFO order
+        by their `timestamp` field. Earlier timestamp = higher priority.
+      operationId: submitOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderRequest'
+            examples:
+              limit_buy:
+                summary: Limit buy order
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440000"
+                  side: "buy"
+                  type: "limit"
+                  price: "100.50"
+                  quantity: 100
+                  timestamp: 1715904000000000000
+              market_sell:
+                summary: Market sell order
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440001"
+                  side: "sell"
+                  type: "market"
+                  quantity: 50
+                  timestamp: 1715904000000001000
+              ioc_buy:
+                summary: IOC buy order
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440002"
+                  side: "buy"
+                  type: "ioc"
+                  price: "101.00"
+                  quantity: 200
+                  timestamp: 1715904000000002000
+              fok_sell:
+                summary: FOK sell order
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440003"
+                  side: "sell"
+                  type: "fok"
+                  price: "99.75"
+                  quantity: 500
+                  timestamp: 1715904000000003000
+      responses:
+        '201':
+          description: Order accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                partial_fill:
+                  summary: Partial fill response
+                  value:
+                    order_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "partial_fill"
+                    filled_qty: 60
+                    remaining_qty: 40
+                    avg_price: "100.50"
+                    fills:
+                      - fill_id: "fill-001"
+                        resting_order_id: "resting-abc"
+                        price: "100.50"
+                        quantity: 60
+                        timestamp: 1715904000000005000
+                fok_killed:
+                  summary: FOK order killed
+                  value:
+                    order_id: "550e8400-e29b-41d4-a716-446655440003"
+                    status: "cancelled"
+                    filled_qty: 0
+                    remaining_qty: 500
+                    avg_price: null
+                    fills: []
+        '400':
+          description: Invalid order request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_price:
+                  value:
+                    error: "INVALID_PRICE"
+                    message: "Price must be positive for limit/ioc/fok orders"
+                    field: "price"
+        '500':
+          description: Internal engine error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/order/{id}:
+    delete:
+      tags: [Contestant Engine]
+      summary: Cancel an order
+      description: |
+        Cancel a resting order by its ID.
+
+        **Rules:**
+        - Can only cancel `PENDING` or `PARTIAL_FILL` orders
+        - Cancelling a `FILLED` order must return `already_filled` (not an error)
+        - Cancelling a non-existent order must return `not_found` (not a 404)
+        - Partially filled orders: cancel the **remaining** quantity. Fills already executed are kept.
+      operationId: cancelOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The order ID to cancel
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Cancel processed (check status field for outcome)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelResponse'
+              examples:
+                cancelled:
+                  value:
+                    order_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "cancelled"
+                    cancelled_qty: 40
+                already_filled:
+                  value:
+                    order_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "already_filled"
+                    cancelled_qty: 0
+                not_found:
+                  value:
+                    order_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "not_found"
+                    cancelled_qty: 0
+        '400':
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal engine error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/orderbook:
+    get:
+      tags: [Contestant Engine]
+      summary: Get current orderbook state
+      description: |
+        Returns the current Limit Order Book (LOB) snapshot.
+
+        **Bids** are sorted descending by price (highest first).
+        **Asks** are sorted ascending by price (lowest first).
+        Each level aggregates total quantity across all orders at that price.
+      operationId: getOrderBook
+      parameters:
+        - name: depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of price levels to return per side
+          example: 10
+      responses:
+        '200':
+          description: Current orderbook snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderBookSnapshot'
+              example:
+                bids:
+                  - price: "100.50"
+                    quantity: 500
+                    order_count: 3
+                  - price: "100.25"
+                    quantity: 300
+                    order_count: 2
+                asks:
+                  - price: "100.75"
+                    quantity: 400
+                    order_count: 1
+                  - price: "101.00"
+                    quantity: 200
+                    order_count: 4
+                timestamp: 1715904000000010000
+                sequence: 42
+        '500':
+          description: Internal engine error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/stream:
+    get:
+      tags: [Contestant Engine]
+      summary: "WebSocket: real-time market data stream"
+      description: |
+        **This endpoint uses WebSocket protocol upgrade.**
+
+        Connect: `ws://host:8080/api/v1/stream`
+
+        After upgrade, your engine streams JSON messages of two types:
+
+        **1. TradeEvent** — emitted after every fill
+        ```json
+        {
+          "type": "trade",
+          "data": {
+            "trade_id": "uuid",
+            "buy_order_id": "uuid",
+            "sell_order_id": "uuid",
+            "price": "100.50",
+            "quantity": 50,
+            "timestamp": 1715904000000005000
+          }
+        }
+        ```
+
+        **2. DepthUpdateEvent** — emitted after every orderbook change
+        ```json
+        {
+          "type": "depth",
+          "data": {
+            "side": "bid",
+            "price": "100.50",
+            "quantity": 450,
+            "timestamp": 1715904000000006000
+          }
+        }
+        ```
+
+        **3. Heartbeat** — every 1 second, proves engine is alive
+        ```json
+        { "type": "heartbeat", "timestamp": 1715904000000000000 }
+        ```
+
+        UORA uses this stream for real-time correctness validation and leaderboard updates.
+      operationId: streamMarketData
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket upgrade successful)
+        '400':
+          description: WebSocket upgrade failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    OrderRequest:
+      type: object
+      required: [id, side, type, quantity, timestamp]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique order identifier (UUID v4). Must be unique per benchmark run.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        side:
+          type: string
+          enum: [buy, sell]
+          description: Order direction
+        type:
+          type: string
+          enum: [limit, market, ioc, fok]
+          description: |
+            Order execution type.
+            - `limit`: Rests in book, fills at limit price or better
+            - `market`: Fills immediately at any price, no resting
+            - `ioc`: Fills at limit price or better, cancels remainder
+            - `fok`: Full fill or full cancel, no partials
+        price:
+          type: string
+          pattern: '^\d+\.\d{2}$'
+          description: |
+            Limit price as decimal string (2dp). Required for limit/ioc/fok.
+            Omit or null for market orders.
+          example: "100.50"
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          description: Number of units to buy/sell
+          example: 100
+        timestamp:
+          type: integer
+          format: int64
+          description: |
+            Order creation time in nanoseconds since Unix epoch.
+            Used for price-time priority: earlier timestamp = higher queue priority
+            at the same price level.
+          example: 1715904000000000000
+        participant_id:
+          type: string
+          description: Optional. Used for self-trade prevention.
+          example: "bot-market-maker-01"
+
+    OrderResponse:
+      type: object
+      required: [order_id, status, filled_qty, remaining_qty, fills]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [accepted, partial_fill, filled, cancelled, rejected]
+          description: |
+            - `accepted`: In book, no fills yet (limit orders only)
+            - `partial_fill`: Some quantity filled, remainder in book (limit) or cancelled (ioc)
+            - `filled`: Entire quantity filled
+            - `cancelled`: Entire order cancelled (fok failed, ioc remainder, explicit cancel)
+            - `rejected`: Invalid order (bad price, duplicate id, etc.)
+        filled_qty:
+          type: integer
+          minimum: 0
+        remaining_qty:
+          type: integer
+          minimum: 0
+        avg_price:
+          type: string
+          nullable: true
+          description: Volume-weighted average fill price. Null if no fills.
+          example: "100.42"
+        fills:
+          type: array
+          description: List of individual fills that occurred for this order
+          items:
+            $ref: '#/components/schemas/FillDetail'
+
+    FillDetail:
+      type: object
+      required: [fill_id, resting_order_id, price, quantity, timestamp]
+      properties:
+        fill_id:
+          type: string
+          format: uuid
+        resting_order_id:
+          type: string
+          format: uuid
+          description: ID of the passive (resting) order that was matched against
+        price:
+          type: string
+          description: Fill price — always the resting order's price (passive price priority)
+          example: "100.50"
+        quantity:
+          type: integer
+          minimum: 1
+        timestamp:
+          type: integer
+          format: int64
+          description: Fill timestamp in nanoseconds
+
+    CancelRequest:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    CancelResponse:
+      type: object
+      required: [order_id, status, cancelled_qty]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [cancelled, already_filled, not_found]
+          description: |
+            - `cancelled`: Successfully cancelled (full or partial remainder)
+            - `already_filled`: Order was fully filled before cancel arrived
+            - `not_found`: No order with this ID exists
+        cancelled_qty:
+          type: integer
+          minimum: 0
+          description: Quantity that was cancelled (0 if already_filled or not_found)
+
+    OrderBookSnapshot:
+      type: object
+      required: [bids, asks, timestamp]
+      properties:
+        bids:
+          type: array
+          description: Buy side, sorted by price descending (best bid first)
+          items:
+            $ref: '#/components/schemas/PriceLevel'
+        asks:
+          type: array
+          description: Sell side, sorted by price ascending (best ask first)
+          items:
+            $ref: '#/components/schemas/PriceLevel'
+        timestamp:
+          type: integer
+          format: int64
+          description: Snapshot time in nanoseconds
+        sequence:
+          type: integer
+          format: int64
+          description: Monotonically increasing sequence number. Each order/fill increments this.
+          example: 42
+
+    PriceLevel:
+      type: object
+      required: [price, quantity, order_count]
+      properties:
+        price:
+          type: string
+          description: Price level as decimal string
+          example: "100.50"
+        quantity:
+          type: integer
+          description: Total quantity across all orders at this price level
+          example: 500
+        order_count:
+          type: integer
+          description: Number of resting orders at this price level
+          example: 3
+
+    TradeEvent:
+      type: object
+      required: [type, data]
+      properties:
+        type:
+          type: string
+          enum: [trade]
+        data:
+          type: object
+          required: [trade_id, buy_order_id, sell_order_id, price, quantity, timestamp]
+          properties:
+            trade_id:
+              type: string
+              format: uuid
+            buy_order_id:
+              type: string
+              format: uuid
+            sell_order_id:
+              type: string
+              format: uuid
+            price:
+              type: string
+              example: "100.50"
+            quantity:
+              type: integer
+            timestamp:
+              type: integer
+              format: int64
+
+    DepthUpdateEvent:
+      type: object
+      required: [type, data]
+      properties:
+        type:
+          type: string
+          enum: [depth]
+        data:
+          type: object
+          required: [side, price, quantity, timestamp]
+          properties:
+            side:
+              type: string
+              enum: [bid, ask]
+            price:
+              type: string
+            quantity:
+              type: integer
+              description: New total quantity at this level (0 = level removed)
+            timestamp:
+              type: integer
+              format: int64
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - INVALID_PRICE
+            - INVALID_QUANTITY
+            - INVALID_ORDER_TYPE
+            - DUPLICATE_ORDER_ID
+            - MISSING_REQUIRED_FIELD
+            - INTERNAL_ERROR
+          example: "INVALID_PRICE"
+        message:
+          type: string
+          description: Human-readable error description
+          example: "Price must be a positive decimal for limit/ioc/fok orders"
+        field:
+          type: string
+          nullable: true
+          description: The request field that caused the error, if applicable
+          example: "price"

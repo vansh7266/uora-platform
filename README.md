@@ -8,24 +8,31 @@ UORA is a distributed benchmarking platform designed to stress-test high-frequen
 
 ## 🚀 Overview
 
-Contestants submit code (C++, Rust, or Go), which UORA then:
-1.  **Containerizes**: Using BuildKit for secure, network-isolated builds.
-2.  **Sandboxes**: Deploying to gVisor (runsc) to prevent syscall-level escapes.
-3.  **Bombards**: Subjecting the implementation to a "Bot Fleet" that replays LOBSTER market data.
-4.  **Scores**: Evaluating performance on microsecond-level latency, throughput, and execution correctness.
+Contestants submit code (C++, Rust, or Go), which UORA then containerizes, sandboxes using gVisor, and bombards with simulated market traffic to score on latency, throughput, and correctness.
 
 ## 🏗️ Architecture
 
-UORA is built on a 4-layer stack designed for maximum observability and isolation:
-
-- **Layer 1: Execution & Sandboxing**  
-  *FastAPI, gVisor, BuildKit.* Handles submission intake and secure execution of untrusted binaries.
-- **Layer 2: Market Simulation**  
-  *Python Asyncio, LOBSTER data.* Simulates high-velocity order traffic to stress-test matching engines.
-- **Layer 3: Telemetry & Observability**  
-  *Envoy Proxy, TimescaleDB, Redis.* Captures wire-level latency using sidecars and stores high-resolution metrics.
-- **Layer 4: Intelligence & UI**  
-  *Next.js, Polars, Isolation Forest.* Visualizes performance and detects "cheating" patterns or stability outliers using ML.
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│              Layer 4: Intelligence & UI (Next.js)               │
+│        (Performance Visualization & Anomaly Detection)          │
+└───────────────────────────────┬─────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│           Layer 3: Telemetry & Observability (Envoy)            │
+│        (Latency Sidecars, TimescaleDB, Redis Metrics)           │
+└───────────────────────────────┬─────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│             Layer 2: Bot Fleet (Market Simulation)              │
+│          (High-Velocity LOBSTER Market Data Replay)             │
+└───────────────────────────────┬─────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│          Layer 1: Execution & Sandboxing (gVisor)               │
+│        (Isolated Contestant Binaries, BuildKit API)             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -42,21 +49,25 @@ UORA is built on a 4-layer stack designed for maximum observability and isolatio
 
 ---
 
-## ⚡ Quick Start (Local Development)
+## ⚡ Quick Start
 
 Ensure you have [Docker](https://www.docker.com/) and `make` installed.
 
 ```bash
-# Clone the repository
-git clone https://github.com/vansh7266/uora-platform.git
-cd uora-platform
-
-# Spin up the infrastructure (MinIO, TimescaleDB, Redis, Envoy)
+# Spin up the infrastructure
 make up
 
-# Run test submission
-make test
+# Verify API health
+curl http://localhost:8000/health
 ```
+
+## 📈 Roadmap (21-Day Timeline)
+
+- [x] **Day 1: Scaffold** - Submission service, Docker infra, Envoy sidecar.
+- [ ] **Day 2-5: Sandboxing** - Full gVisor integration & resource pinning.
+- [ ] **Day 6-10: Bot Fleet** - Replay engine for LOBSTER datasets.
+- [ ] **Day 11-15: Analytics** - Implementation of scoring algorithms & ML anomaly detection.
+- [ ] **Day 16-21: UI & Polish** - Next.js Dashboard & Final Stress Testing.
 
 ## 📂 Project Structure
 
@@ -67,20 +78,14 @@ make test
 ├── platform/
 │   ├── submission/     # Submission intake service
 │   ├── validator/      # Reference LOB & scoring logic
-│   └── telemetry/      # Database schemas & metrics
+│   └── telemetry/      # TimescaleDB schema & metrics
 ├── Makefile            # Automation commands
 └── docker-compose.yml  # Local dev environment
 ```
 
-## 📈 Status
+## ⚖️ License
 
-**Current Phase**: Day 1 Scaffold  
-- ✅ Submission API (FastAPI)
-- ✅ Object Storage (MinIO)
-- ✅ Metric Storage (TimescaleDB)
-- ✅ Sidecar Observability (Envoy)
-- 🚧 Bot Fleet Simulation (In Progress)
-- 🚧 gVisor Runtime Integration (In Progress)
+Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
