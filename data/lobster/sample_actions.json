@@ -2,7 +2,7 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 100.5,
+    "price": 100.0,
     "qty": 25,
     "order_id": "10000",
     "timestamp": 1715904000000000000,
@@ -11,8 +11,8 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 99.75,
-    "qty": 500,
+    "price": 99.5,
+    "qty": 200,
     "order_id": "10001",
     "timestamp": 1715904000001000000,
     "participant_id": "lobster-10001"
@@ -29,7 +29,7 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 101.5,
+    "price": 100.5,
     "qty": 200,
     "order_id": "10003",
     "timestamp": 1715904000003000000,
@@ -38,117 +38,119 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 101.5,
-    "qty": 100,
+    "price": 100.75,
+    "qty": 200,
     "order_id": "10004",
     "timestamp": 1715904000004000000,
     "participant_id": "lobster-10004"
   },
   {
     "type": "limit",
-    "side": "buy",
+    "side": "sell",
     "price": 100.5,
-    "qty": 10,
+    "qty": 50,
     "order_id": "10005",
     "timestamp": 1715904000005000000,
     "participant_id": "lobster-10005"
   },
   {
     "type": "cancel",
-    "order_id": "10002",
-    "qty": 10,
+    "order_id": "10001",
+    "qty": 25,
     "timestamp": 1715904000006000000,
-    "participant_id": "lobster-10002"
+    "participant_id": "lobster-10001"
   },
   {
     "type": "limit",
-    "side": "buy",
-    "price": 100.75,
-    "qty": 10,
+    "side": "sell",
+    "price": 99.75,
+    "qty": 25,
     "order_id": "10007",
     "timestamp": 1715904000007000000,
     "participant_id": "lobster-10007"
   },
   {
     "type": "limit",
-    "side": "buy",
-    "price": 100.75,
-    "qty": 50,
+    "side": "sell",
+    "price": 100.25,
+    "qty": 10,
     "order_id": "10008",
     "timestamp": 1715904000008000000,
     "participant_id": "lobster-10008"
   },
   {
     "type": "cancel",
-    "order_id": "10008",
-    "qty": 200,
+    "order_id": "10004",
     "timestamp": 1715904000009000000,
-    "participant_id": "lobster-10008"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10003",
-    "qty": 50,
-    "timestamp": 1715904000010000000,
-    "participant_id": "lobster-10003"
+    "participant_id": "lobster-10004"
   },
   {
     "type": "cancel",
     "order_id": "10005",
-    "qty": 100,
-    "timestamp": 1715904000011000000,
+    "qty": 5,
+    "timestamp": 1715904000010000000,
     "participant_id": "lobster-10005"
   },
   {
-    "type": "cancel",
-    "order_id": "10000",
-    "qty": 25,
-    "timestamp": 1715904000012000000,
-    "participant_id": "lobster-10000"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10000",
-    "qty": 5,
-    "timestamp": 1715904000013000000,
-    "participant_id": "lobster-10000"
-  },
-  {
     "type": "limit",
-    "side": "buy",
-    "price": 101.25,
-    "qty": 500,
-    "order_id": "10014",
-    "timestamp": 1715904000014000000,
-    "participant_id": "lobster-10014"
+    "side": "sell",
+    "price": 100.0,
+    "qty": 200,
+    "order_id": "10011",
+    "timestamp": 1715904000011000000,
+    "participant_id": "lobster-10011"
   },
   {
     "type": "limit",
     "side": "sell",
     "price": 100.75,
-    "qty": 25,
+    "qty": 10,
+    "order_id": "10012",
+    "timestamp": 1715904000012000000,
+    "participant_id": "lobster-10012"
+  },
+  {
+    "type": "cancel",
+    "order_id": "10005",
+    "qty": 5,
+    "timestamp": 1715904000013000000,
+    "participant_id": "lobster-10005"
+  },
+  {
+    "type": "cancel",
+    "order_id": "10008",
+    "timestamp": 1715904000014000000,
+    "participant_id": "lobster-10008"
+  },
+  {
+    "type": "limit",
+    "side": "sell",
+    "price": 101.0,
+    "qty": 50,
     "order_id": "10015",
     "timestamp": 1715904000015000000,
     "participant_id": "lobster-10015"
   },
   {
-    "type": "cancel",
-    "order_id": "10014",
-    "qty": 25,
+    "type": "limit",
+    "side": "buy",
+    "price": 99.75,
+    "qty": 50,
+    "order_id": "10016",
     "timestamp": 1715904000016000000,
-    "participant_id": "lobster-10014"
+    "participant_id": "lobster-10016"
   },
   {
     "type": "cancel",
-    "order_id": "10001",
+    "order_id": "10002",
     "qty": 25,
     "timestamp": 1715904000017000000,
-    "participant_id": "lobster-10001"
+    "participant_id": "lobster-10002"
   },
   {
     "type": "limit",
     "side": "buy",
-    "price": 101.0,
+    "price": 100.25,
     "qty": 50,
     "order_id": "10018",
     "timestamp": 1715904000018000000,
@@ -163,49 +165,46 @@
   },
   {
     "type": "cancel",
-    "order_id": "10015",
-    "qty": 100,
+    "order_id": "10011",
     "timestamp": 1715904000020000000,
-    "participant_id": "lobster-10015"
+    "participant_id": "lobster-10011"
   },
   {
     "type": "limit",
-    "side": "buy",
-    "price": 100.75,
-    "qty": 25,
+    "side": "sell",
+    "price": 100.5,
+    "qty": 50,
     "order_id": "10021",
     "timestamp": 1715904000021000000,
     "participant_id": "lobster-10021"
   },
   {
-    "type": "limit",
-    "side": "sell",
-    "price": 101.25,
+    "type": "cancel",
+    "order_id": "10012",
     "qty": 25,
-    "order_id": "10022",
     "timestamp": 1715904000022000000,
-    "participant_id": "lobster-10022"
+    "participant_id": "lobster-10012"
   },
   {
     "type": "limit",
     "side": "sell",
-    "price": 101.5,
-    "qty": 200,
+    "price": 99.75,
+    "qty": 25,
     "order_id": "10023",
     "timestamp": 1715904000023000000,
     "participant_id": "lobster-10023"
   },
   {
     "type": "cancel",
-    "order_id": "10018",
+    "order_id": "10012",
     "qty": 25,
     "timestamp": 1715904000024000000,
-    "participant_id": "lobster-10018"
+    "participant_id": "lobster-10012"
   },
   {
     "type": "limit",
     "side": "sell",
-    "price": 100.0,
+    "price": 99.75,
     "qty": 200,
     "order_id": "10025",
     "timestamp": 1715904000025000000,
@@ -223,37 +222,39 @@
   {
     "type": "cancel",
     "order_id": "10025",
-    "qty": 10,
+    "qty": 25,
     "timestamp": 1715904000027000000,
     "participant_id": "lobster-10025"
   },
   {
     "type": "limit",
-    "side": "buy",
-    "price": 101.25,
-    "qty": 200,
+    "side": "sell",
+    "price": 100.25,
+    "qty": 100,
     "order_id": "10028",
     "timestamp": 1715904000028000000,
     "participant_id": "lobster-10028"
   },
   {
-    "type": "cancel",
-    "order_id": "10000",
-    "qty": 200,
+    "type": "limit",
+    "side": "sell",
+    "price": 100.5,
+    "qty": 10,
+    "order_id": "10029",
     "timestamp": 1715904000029000000,
-    "participant_id": "lobster-10000"
+    "participant_id": "lobster-10029"
   },
   {
     "type": "cancel",
-    "order_id": "10023",
-    "qty": 10,
+    "order_id": "10016",
+    "qty": 25,
     "timestamp": 1715904000030000000,
-    "participant_id": "lobster-10023"
+    "participant_id": "lobster-10016"
   },
   {
     "type": "limit",
     "side": "sell",
-    "price": 101.0,
+    "price": 100.25,
     "qty": 25,
     "order_id": "10031",
     "timestamp": 1715904000031000000,
@@ -262,8 +263,8 @@
   {
     "type": "limit",
     "side": "sell",
-    "price": 100.5,
-    "qty": 200,
+    "price": 100.75,
+    "qty": 50,
     "order_id": "10032",
     "timestamp": 1715904000032000000,
     "participant_id": "lobster-10032"
@@ -271,85 +272,87 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 99.75,
-    "qty": 500,
+    "price": 99.5,
+    "qty": 50,
     "order_id": "10033",
     "timestamp": 1715904000033000000,
     "participant_id": "lobster-10033"
   },
   {
-    "type": "cancel",
-    "order_id": "10023",
-    "qty": 200,
+    "type": "limit",
+    "side": "buy",
+    "price": 101.0,
+    "qty": 25,
+    "order_id": "10034",
     "timestamp": 1715904000034000000,
-    "participant_id": "lobster-10023"
+    "participant_id": "lobster-10034"
   },
   {
     "type": "limit",
     "side": "buy",
-    "price": 100.0,
-    "qty": 200,
+    "price": 100.25,
+    "qty": 10,
     "order_id": "10035",
     "timestamp": 1715904000035000000,
     "participant_id": "lobster-10035"
   },
   {
+    "type": "cancel",
+    "order_id": "10018",
+    "timestamp": 1715904000036000000,
+    "participant_id": "lobster-10018"
+  },
+  {
     "type": "limit",
     "side": "buy",
-    "price": 101.25,
+    "price": 100.5,
     "qty": 10,
-    "order_id": "10036",
-    "timestamp": 1715904000036000000,
-    "participant_id": "lobster-10036"
+    "order_id": "10037",
+    "timestamp": 1715904000037000000,
+    "participant_id": "lobster-10037"
+  },
+  {
+    "type": "cancel",
+    "order_id": "10002",
+    "qty": 25,
+    "timestamp": 1715904000038000000,
+    "participant_id": "lobster-10002"
+  },
+  {
+    "type": "limit",
+    "side": "buy",
+    "price": 100.25,
+    "qty": 200,
+    "order_id": "10039",
+    "timestamp": 1715904000039000000,
+    "participant_id": "lobster-10039"
+  },
+  {
+    "type": "limit",
+    "side": "buy",
+    "price": 101.0,
+    "qty": 200,
+    "order_id": "10040",
+    "timestamp": 1715904000040000000,
+    "participant_id": "lobster-10040"
+  },
+  {
+    "type": "cancel",
+    "order_id": "10033",
+    "timestamp": 1715904000041000000,
+    "participant_id": "lobster-10033"
   },
   {
     "type": "cancel",
     "order_id": "10026",
-    "qty": 50,
-    "timestamp": 1715904000037000000,
+    "qty": 25,
+    "timestamp": 1715904000042000000,
     "participant_id": "lobster-10026"
   },
   {
     "type": "limit",
-    "side": "buy",
-    "price": 99.75,
-    "qty": 10,
-    "order_id": "10038",
-    "timestamp": 1715904000038000000,
-    "participant_id": "lobster-10038"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10014",
-    "qty": 50,
-    "timestamp": 1715904000039000000,
-    "participant_id": "lobster-10014"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10004",
-    "qty": 100,
-    "timestamp": 1715904000040000000,
-    "participant_id": "lobster-10004"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10031",
-    "qty": 200,
-    "timestamp": 1715904000041000000,
-    "participant_id": "lobster-10031"
-  },
-  {
-    "type": "cancel",
-    "order_id": "10025",
-    "qty": 25,
-    "timestamp": 1715904000042000000,
-    "participant_id": "lobster-10025"
-  },
-  {
-    "type": "limit",
     "side": "sell",
-    "price": 101.5,
+    "price": 100.5,
     "qty": 100,
     "order_id": "10043",
     "timestamp": 1715904000043000000,
@@ -358,7 +361,7 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 99.75,
+    "price": 99.5,
     "qty": 50,
     "order_id": "10044",
     "timestamp": 1715904000044000000,
@@ -367,7 +370,7 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 100.25,
+    "price": 99.75,
     "qty": 200,
     "order_id": "10045",
     "timestamp": 1715904000045000000,
@@ -376,33 +379,37 @@
   {
     "type": "limit",
     "side": "buy",
-    "price": 99.5,
-    "qty": 25,
+    "price": 100.75,
+    "qty": 10,
     "order_id": "10046",
     "timestamp": 1715904000046000000,
     "participant_id": "lobster-10046"
   },
   {
-    "type": "cancel",
-    "order_id": "10035",
+    "type": "limit",
+    "side": "buy",
+    "price": 99.5,
     "qty": 50,
+    "order_id": "10047",
     "timestamp": 1715904000047000000,
-    "participant_id": "lobster-10035"
+    "participant_id": "lobster-10047"
   },
   {
     "type": "limit",
     "side": "buy",
-    "price": 101.25,
-    "qty": 25,
+    "price": 100.0,
+    "qty": 100,
     "order_id": "10048",
     "timestamp": 1715904000048000000,
     "participant_id": "lobster-10048"
   },
   {
-    "type": "cancel",
-    "order_id": "10046",
-    "qty": 5,
+    "type": "limit",
+    "side": "buy",
+    "price": 100.75,
+    "qty": 200,
+    "order_id": "10049",
     "timestamp": 1715904000049000000,
-    "participant_id": "lobster-10046"
+    "participant_id": "lobster-10049"
   }
 ]
