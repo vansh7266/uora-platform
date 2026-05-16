@@ -1,0 +1,37 @@
+# Default values for UORA.
+
+namespace: uora
+
+submission:
+  replicaCount: 2
+  image:
+    repository: uora-submission
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  env:
+    WORKERS: "4"
+
+botFleet:
+  enabled: false # Typically deployed as an ad-hoc Job rather than a persistent service
+  image:
+    repository: uora-bot-fleet
+    tag: "latest"
+  benchmark:
+    workerCount: 100
+    durationSec: 30
+    scenarioFile: "data/lobster/sample_actions.json"
+
+redis:
+  enabled: true
+  url: "redis://redis-master.uora.svc.cluster.local:6379/0"
+
+timescaledb:
+  enabled: true
+  url: "postgresql://uora:uora12345@timescaledb.uora.svc.cluster.local:5432/uora_metrics"

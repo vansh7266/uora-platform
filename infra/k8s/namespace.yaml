@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uora
+  labels:
+    name: uora
+    environment: production

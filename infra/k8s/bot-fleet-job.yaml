@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: uora-bot-fleet-benchmark
+  namespace: uora
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      containers:
+      - name: bot-fleet
+        image: uora-bot-fleet:latest
+        command: ["python", "uora/bot_fleet/run.py"]
+        env:
+        - name: TARGET_URL
+          value: "http://uora-submission-svc.uora.svc.cluster.local:8000"
+        - name: WORKER_COUNT
+          value: "100"
+        - name: DURATION_SEC
+          value: "30"
+        - name: SCENARIO_FILE
+          value: "data/lobster/sample_actions.json"
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+      restartPolicy: Never
+  backoffLimit: 0
