@@ -1,0 +1,61 @@
+{
+    "defaultAction": "SCMP_ACT_ALLOW",
+    "architectures": [
+        "SCMP_ARCH_X86_64",
+        "SCMP_ARCH_X86",
+        "SCMP_ARCH_X32"
+    ],
+    "syscalls": [
+        {
+            "names": [
+                "ptrace",
+                "process_vm_readv",
+                "mount",
+                "umount2",
+                "open_by_handle_at",
+                "init_module",
+                "delete_module",
+                "iopl",
+                "ioperm",
+                "swapon",
+                "swapoff",
+                "syslog",
+                "settimeofday",
+                "clock_settime",
+                "adjtimex",
+                "chroot"
+            ],
+            "action": "SCMP_ACT_ERRNO"
+        },
+        {
+            "names": ["setrlimit"],
+            "action": "SCMP_ACT_ERRNO",
+            "args": [
+                {
+                    "index": 0,
+                    "value": 7,
+                    "valueTwo": 0,
+                    "op": "SCMP_CMP_EQ"
+                },
+                {
+                    "index": 1,
+                    "value": 4096,
+                    "valueTwo": 0,
+                    "op": "SCMP_CMP_GT"
+                }
+            ]
+        },
+        {
+            "names": ["prctl"],
+            "action": "SCMP_ACT_ERRNO",
+            "args": [
+                {
+                    "index": 0,
+                    "value": 4,
+                    "valueTwo": 0,
+                    "op": "SCMP_CMP_EQ"
+                }
+            ]
+        }
+    ]
+}
