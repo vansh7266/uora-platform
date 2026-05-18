@@ -37,6 +37,7 @@ app = FastAPI(title="UORA Reference Contestant Engine", version="2.0.0")
 
 # Singleton orderbook — the single source of truth for matching
 lob = OrderBook()
+seen_order_ids: set[str] = set()
 
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
@@ -105,6 +106,11 @@ def _fill_to_detail(fill: LobFill, new_order_id: str) -> FillDetail:
     )
 
 
+def _api_order_status(status: str) -> str:
+    """Translate internal LOB states to the public OpenAPI response contract."""
+    return "accepted" if status == "pending" else status
+
+
 # ─── API Endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -118,8 +124,9 @@ async def submit_order(req: OrderRequest):
     if req.type in ("limit", "ioc", "fok") and not req.price:
         raise HTTPException(400, detail="Price required for limit/ioc/fok orders")
 
-    if req.id in lob.orders:
+    if req.id in seen_order_ids:
         raise HTTPException(400, detail="Duplicate order ID")
+    seen_order_ids.add(req.id)
 
     # Convert API request → canonical reference_lob.Order
     order = LobOrder(
@@ -146,7 +153,7 @@ async def submit_order(req: OrderRequest):
 
     return OrderResponse(
         order_id=updated.id,
-        status=updated.status,
+        status=_api_order_status(updated.status),
         filled_qty=updated.filled_qty,
         remaining_qty=updated.remaining_qty,
         avg_price=avg,
@@ -158,18 +165,20 @@ async def submit_order(req: OrderRequest):
 async def cancel_order(order_id: str):
     success, order = lob.cancel_order(order_id)
 
+    if success and order is not None:
+        return CancelResponse(
+            order_id=order_id,
+            status="cancelled",
+            cancelled_qty=order.remaining_qty,
+        )
+
     if not success and order is None:
         return CancelResponse(order_id=order_id, status="not_found", cancelled_qty=0)
 
     if order and order.status == "filled":
         return CancelResponse(order_id=order_id, status="already_filled", cancelled_qty=0)
 
-    if order and order.status == "cancelled":
-        # Already cancelled — treat as not found for idempotency
-        return CancelResponse(order_id=order_id, status="not_found", cancelled_qty=0)
-
-    cancelled_qty = order.remaining_qty if order else 0
-    return CancelResponse(order_id=order_id, status="cancelled", cancelled_qty=cancelled_qty)
+    return CancelResponse(order_id=order_id, status="not_found", cancelled_qty=0)
 
 
 @app.get("/api/v1/orderbook")

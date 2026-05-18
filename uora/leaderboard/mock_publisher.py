@@ -1,12 +1,16 @@
 import asyncio
 import json
+import os
 import random
 import time
 import redis.asyncio as redis
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://:uora12345@localhost:6379/0")
+UPDATES_CHANNEL = "uora:leaderboard:updates"
+
 async def main():
     print("Starting UORA Live Mock Publisher to Redis...")
-    client = redis.from_url("redis://localhost:6379")
+    client = redis.from_url(REDIS_URL)
     
     # Wait for connection
     await client.ping()
@@ -26,13 +30,14 @@ async def main():
 
         # 1. Publish metrics
         metrics = {
+            "type": "metrics",
             "timestamp": timestamp,
             "p50": round(p50_base, 2),
             "p90": round(p50_base * 1.5, 2),
             "p99": round(p50_base * 2.5, 2),
             "throughput": int(tps_base)
         }
-        await client.publish("uora_live_metrics", json.dumps(metrics))
+        await client.publish(UPDATES_CHANNEL, json.dumps(metrics))
 
         # 2. Publish leaderboard
         leaderboard = [
@@ -41,6 +46,7 @@ async def main():
                 "submission_id": "sub-001",
                 "team": "Team Alpha",
                 "composite_score": round(95.0 + random.uniform(-1, 1), 2),
+                "p50_latency_ms": metrics["p50"],
                 "p99_latency_ms": metrics["p99"],
                 "throughput": metrics["throughput"],
                 "correctness_rate": 0.999,
@@ -51,6 +57,7 @@ async def main():
                 "submission_id": "sub-002",
                 "team": "Team Beta",
                 "composite_score": round(87.2 + random.uniform(-0.5, 0.5), 2),
+                "p50_latency_ms": round(metrics["p50"] * 1.2, 2),
                 "p99_latency_ms": round(metrics["p99"] * 1.2, 2),
                 "throughput": int(metrics["throughput"] * 0.8),
                 "correctness_rate": 0.995,
@@ -61,6 +68,7 @@ async def main():
                 "submission_id": "sub-003",
                 "team": "Team Gamma",
                 "composite_score": round(82.1 + random.uniform(-0.5, 0.5), 2),
+                "p50_latency_ms": round(metrics["p50"] * 1.5, 2),
                 "p99_latency_ms": round(metrics["p99"] * 1.5, 2),
                 "throughput": int(metrics["throughput"] * 0.6),
                 "correctness_rate": 0.980,
@@ -72,7 +80,10 @@ async def main():
         for i, entry in enumerate(leaderboard):
             entry["rank"] = i + 1
 
-        await client.publish("uora_live_leaderboard", json.dumps(leaderboard))
+        await client.publish(
+            UPDATES_CHANNEL,
+            json.dumps({"type": "leaderboard", "entries": leaderboard}),
+        )
         
         await asyncio.sleep(1.0)  # publish every 1 sec
 

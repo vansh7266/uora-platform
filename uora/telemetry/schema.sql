@@ -42,7 +42,15 @@ CREATE TABLE IF NOT EXISTS benchmark_scores (
     anomaly_score    FLOAT
 );
 
--- 4. Materialized View: 1-Minute Aggregates (Continuous)
+-- 4. Build Events (submission build/deploy audit trail)
+CREATE TABLE IF NOT EXISTS build_events (
+    time             TIMESTAMPTZ NOT NULL,
+    submission_id    UUID NOT NULL,
+    event            TEXT NOT NULL,
+    detail           TEXT
+);
+
+-- 5. Materialized View: 1-Minute Aggregates (Continuous)
 CREATE MATERIALIZED VIEW IF NOT EXISTS latency_1min
 WITH (timescaledb.continuous) AS
 SELECT
@@ -55,10 +63,17 @@ SELECT
 FROM latency_events
 GROUP BY bucket, submission_id;
 
--- 5. Indexes for fast retrieval by submission
+-- 6. Indexes for fast retrieval by submission
 CREATE INDEX IF NOT EXISTS idx_latency_submission_id ON latency_events (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_violations_submission_id ON correctness_violations (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_submission_id ON benchmark_scores (submission_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_build_events_submission_id ON build_events (submission_id, time DESC);
 
--- 6. Continuous Aggregate Refresh Policy
-SELECT add_continuous_aggregate_policy('latency_1min', INTERVAL '1 minute', INTERVAL '1 minute', if_not_exists => true);
+-- 7. Continuous Aggregate Refresh Policy
+SELECT add_continuous_aggregate_policy(
+    'latency_1min',
+    start_offset => INTERVAL '1 hour',
+    end_offset => INTERVAL '1 minute',
+    schedule_interval => INTERVAL '1 minute',
+    if_not_exists => true
+);

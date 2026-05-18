@@ -125,16 +125,17 @@ services:
     mem_limit: 4g
     cpus: 4.0
     healthcheck:
-      test: [ "CMD", "buildctl", "debug", "workers" ]
+      test: [ "CMD", "buildctl", "--addr", "tcp://0.0.0.0:1234", "debug", "workers" ]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
+      start_period: 20s
 
   # --- Builder Service (consumes Redis build queue) ---
   builder:
     build:
       context: .
-      dockerfile: uora/builder/Dockerfile
+      dockerfile: uora/sandbox/Dockerfile.builder
     container_name: uora-builder
     env_file:
       - .env
@@ -156,7 +157,7 @@ services:
     mem_limit: 2g
     cpus: 2.0
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
+      test: [ "CMD-SHELL", "python -c \"from pathlib import Path; import sys; cmd = Path('/proc/1/cmdline').read_text(); sys.exit(0 if 'uora.sandbox.builder' in cmd else 1)\"" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -201,7 +202,7 @@ services:
     mem_limit: 256m
     cpus: 0.25
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9901/ready" ]
+      test: [ "CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9901 && printf \"GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && grep -q LIVE <&3'" ]
       interval: 10s
       timeout: 5s
       retries: 3

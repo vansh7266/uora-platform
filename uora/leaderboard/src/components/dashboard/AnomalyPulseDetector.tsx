@@ -21,15 +21,13 @@ export function AnomalyPulseDetector() {
 
   // Track anomaly scores and trigger shaking effect
   useEffect(() => {
-    if (anomalies.length > 0) {
-      const latest = anomalies[anomalies.length - 1];
+    if (anomalies.length === 0) return;
+    const latest = anomalies[anomalies.length - 1];
+    if (latest.score <= 0.7) return;
 
-      if (latest.score > 0.7) {
-        setIsShaking(true);
-        const timer = setTimeout(() => setIsShaking(false), 600);
-        return () => clearTimeout(timer);
-      }
-    }
+    setIsShaking(true);
+    const timer = setTimeout(() => setIsShaking(false), 600);
+    return () => clearTimeout(timer);
   }, [anomalies]);
 
   // Compute current max anomaly score from entries

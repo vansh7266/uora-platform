@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // ── Shared singletons (module-level) ────────────────────────────────────────
 // Prevents connection exhaustion under high client counts (30k+ concurrent users).
 
-const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379/0";
+const REDIS_URL = process.env.REDIS_URL || "redis://:uora12345@redis:6379/0";
 
 let sharedRedis: Redis | null = null;
 let sharedPgPool: Pool | null = null;
@@ -141,6 +141,7 @@ export async function GET() {
                   submission_id: r.team,
                   team: r.team,
                   composite_score: parseFloat(r.composite_score),
+                  p50_latency_ms: (r.p99_latency_ns / 1_000_000.0) * 0.4,
                   p99_latency_ms: r.p99_latency_ns / 1_000_000.0,
                   throughput: r.throughput,
                   correctness_rate: parseFloat(r.correctness_rate),

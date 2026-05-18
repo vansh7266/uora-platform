@@ -12,9 +12,12 @@ import re
 import time
 from collections import deque
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
-import asyncpg
+try:
+    import asyncpg
+except ImportError:  # pragma: no cover - exercised in minimal local envs
+    asyncpg = None
 
 logger = logging.getLogger("uora.telemetry.ingester")
 
@@ -52,7 +55,7 @@ class TelemetryIngester:
         self.batch_size = batch_size
         self.flush_interval_ms = flush_interval_ms
 
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: Optional[Any] = None
         self._buffer: list[dict] = []
         self._dead_letter: deque[dict] = deque(maxlen=10_000)
         self._flush_retries: dict[str, int] = {}  # record hash -> retry count
@@ -60,6 +63,9 @@ class TelemetryIngester:
 
     async def start(self) -> None:
         """Initialize DB connection pool."""
+        if asyncpg is None:
+            raise RuntimeError("asyncpg is required for TimescaleDB ingestion. Install project dependencies first.")
+
         self._running = True
         self._pool = await asyncpg.create_pool(
             host=self.db_host,
@@ -185,7 +191,7 @@ class TelemetryIngester:
         """Extract submission_id from request_id format: sub-<uuid>-bot-<id>"""
         parts = request_id.split("-")
         if len(parts) >= 2 and parts[0] == "sub":
-            return "-".join(parts[1:5])  # UUID is 4 parts
+            return "-".join(parts[1:6])  # UUID is 5 hyphen-separated groups
         return None
 
     def _extract_bot_id(self, request_id: str) -> Optional[str]:
@@ -239,6 +245,16 @@ async def main():
     except Exception as e:
         print(f"⚠ DB not available (expected in dev without Docker): {e}")
         print("✓ Test complete (parse/buffer validated; DB flush skipped)")
+
+
+def test_extract_submission_id_preserves_full_uuid():
+    ingester = TelemetryIngester()
+
+    submission_id = ingester._extract_submission_id(
+        "sub-550e8400-e29b-41d4-a716-446655440000-bot-01"
+    )
+
+    assert submission_id == "550e8400-e29b-41d4-a716-446655440000"
 
 
 if __name__ == "__main__":

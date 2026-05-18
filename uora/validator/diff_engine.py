@@ -8,13 +8,19 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import networkx as nx
 
-from uora.validator.reference_lob import OrderBook, Order, Fill
+try:
+    from uora.validator.reference_lob import OrderBook, Order, Fill
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from uora.validator.reference_lob import OrderBook, Order, Fill
 
 
 @dataclass
@@ -24,6 +30,17 @@ class Violation:
     expected: Any
     actual: Any
     description: str
+
+
+def _action_quantity(action: dict) -> int:
+    """Return quantity from LOBSTER-style qty or OpenAPI-style quantity."""
+    quantity = action.get("qty", action.get("quantity", 0))
+    return int(quantity or 0)
+
+
+def _normalize_status(status: str) -> str:
+    """Treat public API accepted and internal LOB pending as the same state."""
+    return "pending" if status == "accepted" else status
 
 
 # ─── Graph Edit Distance Helpers ────────────────────────────────────────────
@@ -163,8 +180,20 @@ class CorrectnessValidator:
             reference_states.append(ref_result)
 
         # Compare against contestant responses
+        if len(contestant_responses) != len(actions):
+            self.violations.append(Violation(
+                level=2,
+                order_id="batch",
+                expected=f"{len(actions)} responses",
+                actual=f"{len(contestant_responses)} responses",
+                description=(
+                    f"Response count mismatch: expected {len(actions)}, "
+                    f"got {len(contestant_responses)}"
+                ),
+            ))
+
         for i, (action, contestant_resp, ref_state) in enumerate(
-            zip(actions, contestant_responses, reference_states)
+            zip(actions, contestant_responses[:len(actions)], reference_states)
         ):
             self._validate_action(action, contestant_resp, ref_state, i)
 
@@ -198,7 +227,7 @@ class CorrectnessValidator:
                 side=action["side"],
                 order_type=action_type,
                 price=action.get("price"),
-                quantity=action["qty"],
+                quantity=_action_quantity(action),
                 participant_id=action.get("participant_id", action.get("order_id", f"bot-{time.time_ns()}")),
             )
             fills, updated = self.reference_book.submit_order(order)
@@ -293,7 +322,7 @@ class CorrectnessValidator:
             "cancelled": [],
         }
 
-        if contestant_status != reference_status:
+        if _normalize_status(contestant_status) != _normalize_status(reference_status):
             self.violations.append(Violation(
                 level=2,
                 order_id=order_id,
@@ -378,6 +407,46 @@ def test_validator():
 
     assert report["violations_count"] == 0, "Expected no violations for correct responses"
     print("✓ Validator test passed")
+
+
+def test_validator_flags_response_count_mismatch():
+    """Dropped contestant responses must be counted as correctness violations."""
+    validator = CorrectnessValidator()
+
+    actions = [
+        {"type": "limit", "side": "sell", "price": 100.0, "qty": 10, "order_id": "S1"},
+        {"type": "limit", "side": "buy", "price": 100.0, "qty": 5, "order_id": "B1"},
+    ]
+
+    report = validator.validate_submission(actions, contestant_responses=[])
+
+    assert report["violations_count"] >= 1
+    assert any(
+        v["description"] == "Response count mismatch: expected 2, got 0"
+        for v in report["violations"]
+    )
+
+
+def test_validator_accepts_quantity_alias_from_openapi_actions():
+    """OpenAPI clients use quantity while LOBSTER fixtures use qty."""
+    validator = CorrectnessValidator()
+
+    actions = [
+        {
+            "type": "limit",
+            "side": "sell",
+            "price": 100.0,
+            "quantity": 10,
+            "order_id": "S1",
+        }
+    ]
+    contestant_responses = [
+        {"status": "accepted", "filled_qty": 0, "remaining_qty": 10, "fills": []},
+    ]
+
+    report = validator.validate_submission(actions, contestant_responses)
+
+    assert report["violations_count"] == 0
 
 
 if __name__ == "__main__":

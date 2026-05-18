@@ -28,9 +28,10 @@ logging.basicConfig(level=logging.INFO)
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "uora")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "uora12345")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "uora-submissions")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "uora12345")
 BUILD_TIMEOUT = int(os.getenv("BUILD_TIMEOUT", 60))
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 50 * 1024 * 1024))  # 50MB
 
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
             aws_secret_access_key=MINIO_SECRET_KEY,
             region_name="us-east-1",
         ) as client:
-            await client.create_bucket(Bucket="uora-submissions")
+            await client.create_bucket(Bucket=MINIO_BUCKET)
     except Exception:
         pass  # Bucket may already exist
     yield
@@ -342,7 +343,7 @@ async def submit_code(
         ) as client:
             file_content = await file.read()
             await client.put_object(
-                Bucket="uora-submissions",
+                Bucket=MINIO_BUCKET,
                 Key=s3_key,
                 Body=file_content,
                 ContentType="application/octet-stream",

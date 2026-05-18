@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
 import statistics
 import time
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 _MIN_DELAY: float = 0.001   # 1 ms
 _MAX_DELAY: float = 0.010   # 10 ms
 _LOG_EVERY: int   = 100
+
+
+def _action_qty(action: dict[str, Any]) -> int:
+    """Support both LOBSTER-style qty and OpenAPI-style quantity."""
+    return int(action.get("qty", action.get("quantity", 0)))
 
 
 class BotCoordinator:
@@ -128,7 +134,7 @@ class BotCoordinator:
         return {
             "total_orders":   total,
             "avg_latency_ns": statistics.mean(sorted_lats) if lats else 0.0,
-            "p99_latency_ns": sorted_lats[min(int(n * 0.99), n - 1)],
+            "p99_latency_ns": sorted_lats[min(math.ceil(n * 0.99) - 1, n - 1)],
             "success_rate":   len(self._records) / max(total, 1),
             "results":        self._records,
         }
@@ -138,13 +144,13 @@ class BotCoordinator:
     async def _dispatch(self, bot: TradingBot, action: dict[str, Any]) -> dict[str, Any]:
         t = action.get("type", "").lower()
         if t == "limit":
-            return await bot.send_limit_order(action["side"], float(action["price"]), int(action["qty"]))
+            return await bot.send_limit_order(action["side"], float(action["price"]), _action_qty(action))
         if t == "market":
-            return await bot.send_market_order(action["side"], int(action["qty"]))
+            return await bot.send_market_order(action["side"], _action_qty(action))
         if t == "ioc":
-            return await bot.send_ioc_order(action["side"], float(action["price"]), int(action["qty"]))
+            return await bot.send_ioc_order(action["side"], float(action["price"]), _action_qty(action))
         if t == "fok":
-            return await bot.send_fok_order(action["side"], float(action["price"]), int(action["qty"]))
+            return await bot.send_fok_order(action["side"], float(action["price"]), _action_qty(action))
         if t == "cancel":
             return await bot.cancel_order(action["order_id"])
         raise ValueError(f"Unknown action type: {t!r}")

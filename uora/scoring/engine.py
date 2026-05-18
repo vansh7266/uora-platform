@@ -8,18 +8,31 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
-import asyncpg
 import numpy as np
-import polars as pl
+
+try:
+    import asyncpg
+except ImportError:  # pragma: no cover - exercised in minimal local envs
+    asyncpg = None
+
+try:
+    import polars as pl
+except ImportError:  # pragma: no cover - exercised in minimal local envs
+    pl = None
 
 logger = logging.getLogger("uora.scoring")
 
 
 # ─── Module-level connection pool ────────────────────────────────────────────
 
-_pool: Optional[asyncpg.Pool] = None
+_pool: Optional[Any] = None
+
+
+def _p99_to_p50_ratio(p99_latency: float, p50_latency: float | None) -> float:
+    """Return the tail-latency ratio for values already expressed in ns."""
+    return (p99_latency / p50_latency) if p50_latency and p50_latency > 0 else 1.0
 
 
 async def startup(
@@ -30,6 +43,9 @@ async def startup(
     db_name: str = "uora_metrics",
 ) -> None:
     """Create the global connection pool. Call once at app start."""
+    if asyncpg is None:
+        raise RuntimeError("asyncpg is required for scoring DB access. Install project dependencies first.")
+
     global _pool
     _pool = await asyncpg.create_pool(
         host=db_host,
@@ -63,19 +79,26 @@ class ScoringEngine:
         db_password: str = "uora12345",
         db_name: str = "uora_metrics",
     ):
-        self.db_host = db_host
-        self.db_port = db_port
-        self.db_user = db_user
-        self.db_password = db_password
-        self.db_name = db_name
+        self._db_config = {
+            "db_host": db_host,
+            "db_port": db_port,
+            "db_user": db_user,
+            "db_password": db_password,
+            "db_name": db_name,
+        }
+
+    async def _ensure_pool(self) -> None:
+        if _pool is None:
+            await startup(**self._db_config)
 
     async def compute_score(self, submission_id: str) -> dict:
         """
         Compute composite score for a submission.
         Returns: score dict with all metrics.
         """
-        if _pool is None:
-            raise RuntimeError("Connection pool not initialized. Call scoring.startup() first.")
+        await self._ensure_pool()
+        if pl is None:
+            raise RuntimeError("polars is required for scoring computation. Install project dependencies first.")
 
         async with _pool.acquire() as conn:
             # Fetch 1-minute aggregates from continuous view
@@ -166,7 +189,7 @@ class ScoringEngine:
                     latency_trend_slope=0.0,
                     throughput_variance=float(latency_variance) if latency_variance else 0.0,
                     error_rate=0.0,
-                    p99_to_p50_ratio=(p99_latency / (p50_latency * 1_000_000)) if p50_latency and p50_latency > 0 else 1.0,
+                    p99_to_p50_ratio=_p99_to_p50_ratio(p99_latency, p50_latency),
                 )
                 result = detector.detect(features)
                 anomaly_score = result.anomaly_score
@@ -218,8 +241,7 @@ class ScoringEngine:
 
     async def get_leaderboard(self, limit: int = 20) -> list[dict]:
         """Fetch top submissions by composite score."""
-        if _pool is None:
-            raise RuntimeError("Connection pool not initialized. Call scoring.startup() first.")
+        await self._ensure_pool()
 
         async with _pool.acquire() as conn:
             rows = await conn.fetch(
@@ -246,6 +268,9 @@ class ScoringEngine:
 
 
 # ─── Test ────────────────────────────────────────────────────────────────────
+
+def test_p99_to_p50_ratio_uses_matching_nanosecond_units():
+    assert _p99_to_p50_ratio(3_000_000, 1_000_000) == 3.0
 
 async def test_scoring():
     """Test scoring engine with mock data."""

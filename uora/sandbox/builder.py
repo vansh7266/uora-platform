@@ -47,7 +47,7 @@ logger = logging.getLogger("uora.sandbox.builder")
 
 REDIS_HOST: Final = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT: Final = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_PASSWORD: Final[str | None] = os.getenv("REDIS_PASSWORD", None)
+REDIS_PASSWORD: Final[str | None] = os.getenv("REDIS_PASSWORD", "uora12345") or None
 
 MINIO_ENDPOINT: Final = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY: Final = os.getenv("MINIO_ACCESS_KEY", "uora")
@@ -55,7 +55,7 @@ MINIO_SECRET_KEY: Final = os.getenv("MINIO_SECRET_KEY", "uora12345")
 MINIO_BUCKET: Final = os.getenv("MINIO_BUCKET", "uora-submissions")
 MINIO_SECURE: Final = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
-REGISTRY: Final = os.getenv("REGISTRY", "localhost:5000")
+REGISTRY: Final = os.getenv("REGISTRY_URL", os.getenv("REGISTRY", "localhost:5000"))
 BUILD_TIMEOUT: Final = int(os.getenv("BUILD_TIMEOUT", "120"))
 BUILD_NETWORK: Final = os.getenv("BUILD_NETWORK", "none")
 
@@ -330,8 +330,9 @@ class SandboxBuilder:
         """
         assert self._s3_session is not None
 
-        tarball_path = dest_dir / "source.tar.gz"
-        logger.info("Downloading s3://%s/%s → %s", MINIO_BUCKET, s3_key, tarball_path)
+        source_name = Path(s3_key).name or "source"
+        download_path = dest_dir / source_name
+        logger.info("Downloading s3://%s/%s → %s", MINIO_BUCKET, s3_key, download_path)
 
         async with self._s3_session.client(
             "s3",
@@ -343,17 +344,24 @@ class SandboxBuilder:
             try:
                 resp = await s3.get_object(Bucket=MINIO_BUCKET, Key=s3_key)
                 async with resp["Body"] as stream:
-                    with open(tarball_path, "wb") as fh:
+                    with open(download_path, "wb") as fh:
                         async for chunk in stream.iter_chunks(chunk_size=65536):
                             fh.write(chunk)
             except s3.exceptions.NoSuchKey:
                 raise FileNotFoundError(f"S3 key not found: {MINIO_BUCKET}/{s3_key}")
 
-        # Extract
         source_dir = dest_dir / "src"
         source_dir.mkdir()
+
+        if not source_name.endswith((".tar.gz", ".tgz")):
+            target_path = source_dir / source_name
+            download_path.replace(target_path)
+            logger.info("Prepared single-file source at %s", target_path)
+            return source_dir
+
+        # Extract archive uploads.
         proc = await asyncio.create_subprocess_exec(
-            "tar", "-xzf", str(tarball_path), "-C", str(source_dir),
+            "tar", "-xzf", str(download_path), "-C", str(source_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

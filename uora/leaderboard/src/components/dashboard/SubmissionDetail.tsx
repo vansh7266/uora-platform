@@ -43,8 +43,7 @@ export function SubmissionDetail() {
   const router = useRouter();
   const { selectedEntry } = useLeaderboardStore();
 
-  // Use selected entry or create mock data for display
-  const entry = selectedEntry || {
+  const fallbackEntry = useMemo(() => ({
     rank: 1,
     prevRank: 1,
     submission_id: "sub-001",
@@ -57,7 +56,10 @@ export function SubmissionDetail() {
     correctness_rate: 0.999,
     status: "completed" as const,
     anomaly_score: 0.15,
-  };
+  }), []);
+
+  // Use selected entry or create mock data for display
+  const entry = selectedEntry || fallbackEntry;
 
   // Latency histogram data
   const histogramOption = useMemo(() => {

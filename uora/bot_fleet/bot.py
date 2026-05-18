@@ -35,6 +35,11 @@ _CB_RECOVERY_SECONDS: float = 10.0      # wait before half-open probe
 logger = logging.getLogger(__name__)
 
 
+def _action_qty(action: dict[str, Any]) -> int:
+    """Support both LOBSTER-style qty and OpenAPI-style quantity."""
+    return int(action.get("qty", action.get("quantity", 0)))
+
+
 # ── Circuit-breaker state machine ─────────────────────────────────────────────
 class _CBState(Enum):
     CLOSED = auto()
@@ -257,10 +262,10 @@ class TradingBot:
         their required keys:
 
         ============== =============================================
-        ``limit``      ``side``, ``price``, ``qty``
-        ``market``     ``side``, ``qty``
-        ``ioc``        ``side``, ``price``, ``qty``
-        ``fok``        ``side``, ``price``, ``qty``
+        ``limit``      ``side``, ``price``, ``qty``/``quantity``
+        ``market``     ``side``, ``qty``/``quantity``
+        ``ioc``        ``side``, ``price``, ``qty``/``quantity``
+        ``fok``        ``side``, ``price``, ``qty``/``quantity``
         ``cancel``     ``order_id``
         ============== =============================================
 
@@ -275,17 +280,17 @@ class TradingBot:
 
             if action_type == "limit":
                 coro = self.send_limit_order(
-                    action["side"], float(action["price"]), int(action["qty"])
+                    action["side"], float(action["price"]), _action_qty(action)
                 )
             elif action_type == "market":
-                coro = self.send_market_order(action["side"], int(action["qty"]))
+                coro = self.send_market_order(action["side"], _action_qty(action))
             elif action_type == "ioc":
                 coro = self.send_ioc_order(
-                    action["side"], float(action["price"]), int(action["qty"])
+                    action["side"], float(action["price"]), _action_qty(action)
                 )
             elif action_type == "fok":
                 coro = self.send_fok_order(
-                    action["side"], float(action["price"]), int(action["qty"])
+                    action["side"], float(action["price"]), _action_qty(action)
                 )
             elif action_type == "cancel":
                 coro = self.cancel_order(action["order_id"])

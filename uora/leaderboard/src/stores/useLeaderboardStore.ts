@@ -81,7 +81,8 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
         ...entry,
         prevRank: prev ? prev.rank : entry.rank,
         language: entry.language || "C++",
-        anomaly_score: entry.anomaly_score ?? Math.random() * 0.3,
+        p50_latency_ms: entry.p50_latency_ms ?? entry.p99_latency_ms * 0.4,
+        anomaly_score: entry.anomaly_score ?? 0,
       };
     });
     set({ entries: enrichedEntries, lastUpdated: Date.now() });

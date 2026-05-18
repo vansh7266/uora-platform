@@ -310,7 +310,7 @@ export function LeaderboardTable() {
                 <DetailCard
                   icon={<Clock className="w-4 h-4" />}
                   label="P50 Latency"
-                  value={formatLatency(selectedEntry.p50_latency_ms || selectedEntry.p99_latency_ms * 0.4)}
+                  value={formatLatency(selectedEntry.p50_latency_ms ?? selectedEntry.p99_latency_ms * 0.4)}
                   color="text-uora-cyan"
                 />
                 <DetailCard
