@@ -47,6 +47,7 @@ class ChaosInjector:
         self.interface = target_interface
         self.active_profiles: list[ChaosProfile] = []
         self._tc_available = self._check_tc()
+        self._tasks: set[asyncio.Task] = set()
 
     def _check_tc(self) -> bool:
         try:
@@ -96,7 +97,9 @@ class ChaosInjector:
         if proc.returncode == 0:
             self.active_profiles.append(profile)
             print(f"✓ Chaos injected: {profile.mode.name} for {profile.duration_sec}s")
-            asyncio.create_task(self._auto_clear(profile.duration_sec))
+            task = asyncio.create_task(self._auto_clear(profile.duration_sec))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
             return True
         else:
             print(f"✗ Chaos injection failed: {stderr.decode().strip()}")
@@ -111,7 +114,9 @@ class ChaosInjector:
         if profile.rate_kbit:
             print(f"  → Simulating {profile.rate_kbit}kbit bandwidth cap")
         self.active_profiles.append(profile)
-        asyncio.create_task(self._auto_clear(profile.duration_sec))
+        task = asyncio.create_task(self._auto_clear(profile.duration_sec))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
         return True
 
     async def _auto_clear(self, delay_sec: int) -> None:

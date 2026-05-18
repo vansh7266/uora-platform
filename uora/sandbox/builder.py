@@ -359,9 +359,22 @@ class SandboxBuilder:
             logger.info("Prepared single-file source at %s", target_path)
             return source_dir
 
-        # Extract archive uploads.
+        # Validate archive members to prevent path traversal
+        proc = await asyncio.create_subprocess_exec(
+            "tar", "-tzf", str(download_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0:
+            for member in stdout.decode().splitlines():
+                if member.startswith("/") or ".." in member:
+                    raise RuntimeError("Path traversal attempt detected in archive")
+
+        # Extract archive uploads securely
         proc = await asyncio.create_subprocess_exec(
             "tar", "-xzf", str(download_path), "-C", str(source_dir),
+            "--no-same-owner", "--no-same-permissions",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -403,16 +416,17 @@ class SandboxBuilder:
         tag_suffix = "".join(c for c in tag_suffix if c.isalnum() or c in ".-")
         image_tag = f"{REGISTRY}/uora/sub-{tag_suffix}:latest"
 
+        # Use buildctl with BUILDKIT_HOST for rootless, isolated builds
+        buildkit_addr = os.getenv("BUILDKIT_HOST", "tcp://buildkitd:1234")
+        
         cmd: list[str] = [
-            "docker", "buildx", "build",
-            "--network", BUILD_NETWORK,
-            "--no-cache",
-            "-t", image_tag,
-            "-f", str(dockerfile_path),
-            "--load",
-            str(source_dir),
+            "buildctl", "--addr", buildkit_addr, "build",
+            "--frontend", "dockerfile.v0",
+            "--local", f"context={source_dir}",
+            "--local", f"dockerfile={source_dir}",
+            "--output", f"type=image,name={image_tag},push=true"
         ]
-        logger.info("Building image %s (lang=%s)", image_tag, language)
+        logger.info("Building and pushing image %s (lang=%s)", image_tag, language)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -429,32 +443,18 @@ class SandboxBuilder:
         if proc.returncode != 0:
             build_log = stderr.decode(errors="replace")[-4096:]  # last 4 KB
             raise RuntimeError(
-                f"Docker build failed (rc={proc.returncode}):\n{build_log}"
+                f"BuildKit build failed (rc={proc.returncode}):\n{build_log}"
             )
 
-        logger.info("Built image %s successfully", image_tag)
+        logger.info("Built and pushed image %s successfully", image_tag)
         return image_tag
 
     # ── Registry push ──────────────────────────────────────────────────
 
     async def _push_image(self, image_tag: str) -> None:
         """Push the built image to the container registry."""
-        logger.info("Pushing image %s", image_tag)
-
-        proc = await asyncio.create_subprocess_exec(
-            "docker", "push", image_tag,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-
-        if proc.returncode != 0:
-            push_log = stderr.decode(errors="replace")[-4096:]
-            raise RuntimeError(
-                f"docker push failed (rc={proc.returncode}):\n{push_log}"
-            )
-
-        logger.info("Pushed image %s", image_tag)
+        # Note: Handled directly by buildctl --output type=image,push=true
+        pass
 
     # ── Kubernetes deploy ───────────────────────────────────────────────
 
@@ -545,7 +545,8 @@ class SandboxBuilder:
             await self._update_status(
                 submission_id, "deployed", image=image_tag, pod_name=pod_name
             )
-            await self._record_build_event(submission_id, "deployed", f"Pod: {pod_name}")
+            # Write base resource penalty to Redis so scoring engine can read it
+            await self._redis.set(f"resources:{submission_id}", "1.0", ex=86400)
 
         except Exception as exc:
             logger.exception("Build pipeline failed for submission %s", submission_id)

@@ -41,10 +41,10 @@ class BotCoordinator:
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
-    async def start(self, base_url: str, worker_count: int) -> None:
+    async def start(self, base_url: str, worker_count: int, submission_id: str = "dev") -> None:
         """Spawn *worker_count* TradingBots and connect them all in parallel."""
         self._worker_count = worker_count
-        self._bots = [TradingBot() for _ in range(worker_count)]
+        self._bots = [TradingBot(submission_id=submission_id, bot_id=str(i)) for i in range(worker_count)]
         await asyncio.gather(*(bot.connect(base_url) for bot in self._bots))
         logger.info("✓ %d workers connected to %s", worker_count, base_url)
 
@@ -85,8 +85,9 @@ class BotCoordinator:
 
         async def _worker(bot: TradingBot, worker_id: int) -> None:
             nonlocal completed
+            rng = random.Random(42 + worker_id)
             while time.monotonic() < deadline:
-                action = random.choice(self._actions)
+                action = rng.choice(self._actions)
                 try:
                     result, latency_ns = await bot.measure_latency(
                         self._dispatch(bot, action)
@@ -108,7 +109,7 @@ class BotCoordinator:
                         completed += 1
                         logger.debug("Worker %d error: %s", worker_id, exc)
 
-                await asyncio.sleep(random.uniform(_MIN_DELAY, _MAX_DELAY))
+                await asyncio.sleep(rng.uniform(_MIN_DELAY, _MAX_DELAY))
 
         await asyncio.gather(*(
             _worker(bot, i) for i, bot in enumerate(self._bots)

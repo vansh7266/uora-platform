@@ -61,7 +61,7 @@ class MLAnomalyDetector:
     Any submission that deviates significantly is flagged for review.
     """
 
-    CONTAMINATION: float = 0.01   # Expected % of anomalies in population
+    CONTAMINATION: float = 0.05   # Expected % of anomalies in population
     N_ESTIMATORS: int = 100
     RANDOM_STATE: int = 42
 
@@ -108,7 +108,7 @@ class MLAnomalyDetector:
         for i in range(n):
             self.normal_profiles.append(BenchmarkFeatures(
                 submission_id=f"synthetic-normal-{i}",
-                latency_entropy=rng.uniform(1_000_000, 20_000_000),  # 1-20ms std dev
+                latency_entropy=rng.uniform(500_000, 50_000_000),    # Realistic variance
                 pattern_correlation=rng.uniform(0.0, 0.4),           # low correlation
                 volume_conservation_delta=rng.uniform(0, 10),        # near-zero
                 state_transition_ged=rng.uniform(0, 0.15),           # deterministic

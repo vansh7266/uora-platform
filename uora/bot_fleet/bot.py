@@ -122,8 +122,13 @@ class TradingBot:
         await bot.session.close()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, submission_id: str = "dev", bot_id: str = "0", protocol: str = "REST") -> None:
+        self.submission_id = submission_id
+        self.bot_id = bot_id
+        self.protocol = protocol.upper()
         self.session: aiohttp.ClientSession | None = None
+        self._fix_reader: asyncio.StreamReader | None = None
+        self._fix_writer: asyncio.StreamWriter | None = None
         self._base_url: str = ""
         self._circuit_breaker: _CircuitBreaker = _CircuitBreaker()
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(
@@ -134,13 +139,19 @@ class TradingBot:
 
     async def connect(self, base_url: str) -> None:
         """
-        Initialise an ``aiohttp.ClientSession`` targeting *base_url*.
-
-        A unique ``x-request-id`` (UUID4) header is injected into every
-        outgoing request via a ``BaseConnector`` trace config; the header
-        value is refreshed per-request.
+        Initialise connection to the contestant's server.
+        Supports REST via aiohttp or raw FIX via TCP sockets.
         """
         self._base_url = base_url.rstrip("/")
+
+        if self.protocol == "FIX":
+            from urllib.parse import urlparse
+            parsed = urlparse(self._base_url)
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 9000
+            self._fix_reader, self._fix_writer = await asyncio.open_connection(host, port)
+            logger.info("TradingBot FIX connected to %s:%s", host, port)
+            return
 
         # Per-request x-request-id injection via a request-start signal.
         trace_config = aiohttp.TraceConfig()
@@ -150,7 +161,7 @@ class TradingBot:
             _trace_config_ctx: Any,
             params: aiohttp.TraceRequestStartParams,
         ) -> None:
-            params.headers["x-request-id"] = str(uuid.uuid4())
+            params.headers["x-request-id"] = f"sub-{self.submission_id}-bot-{self.bot_id}-req-{uuid.uuid4().hex[:8]}"
 
         trace_config.on_request_start.append(_inject_request_id)
 
@@ -169,6 +180,19 @@ class TradingBot:
         logger.info("TradingBot connected to %s", self._base_url)
 
     # ── Order submission helpers ───────────────────────────────────────────────
+    
+    async def _send_action(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.protocol == "FIX":
+            from uora.bot_fleet.fix_adapter import FIXAdapter
+            msg = FIXAdapter.build_message(payload, sender_comp_id=f"BOT-{self.bot_id}")
+            self._fix_writer.write(msg.encode())
+            await self._fix_writer.drain()
+            # Simple mock response since FIX is asynchronous
+            return {"status": "ok", "latency_ns": 0}
+            
+        if endpoint.startswith("DELETE"):
+            return await self._delete(endpoint.split(" ", 1)[1])
+        return await self._post(endpoint, json=payload)
 
     async def send_limit_order(
         self, side: str, price: float, qty: int
@@ -182,7 +206,7 @@ class TradingBot:
             "quantity": qty,        # OpenAPI spec: "quantity", not "qty"
             "timestamp": time.time_ns(),
         }
-        return await self._post("/api/v1/order", json=payload)
+        return await self._send_action("/api/v1/order", payload)
 
     async def send_market_order(self, side: str, qty: int) -> dict[str, Any]:
         """POST a market order and return the parsed JSON response."""
@@ -193,7 +217,7 @@ class TradingBot:
             "quantity": qty,
             "timestamp": time.time_ns(),
         }
-        return await self._post("/api/v1/order", json=payload)
+        return await self._send_action("/api/v1/order", payload)
 
     async def send_ioc_order(
         self, side: str, price: float, qty: int
@@ -207,7 +231,7 @@ class TradingBot:
             "quantity": qty,
             "timestamp": time.time_ns(),
         }
-        return await self._post("/api/v1/order", json=payload)
+        return await self._send_action("/api/v1/order", payload)
 
     async def send_fok_order(
         self, side: str, price: float, qty: int
@@ -225,11 +249,12 @@ class TradingBot:
             "quantity": qty,
             "timestamp": time.time_ns(),
         }
-        return await self._post("/api/v1/order", json=payload)
+        return await self._send_action("/api/v1/order", payload)
 
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
-        """DELETE /api/v1/order/{order_id} and return the parsed JSON response."""
-        return await self._delete(f"/api/v1/order/{order_id}")
+        """Cancel an order."""
+        payload = {"type": "cancel", "order_id": order_id}
+        return await self._send_action(f"DELETE /api/v1/order/{order_id}", payload)
 
     # ── Latency measurement ────────────────────────────────────────────────────
 

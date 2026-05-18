@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -218,7 +219,13 @@ class TelemetryIngester:
 # ─── CLI / Test ──────────────────────────────────────────────────────────────
 
 async def main():
-    ingester = TelemetryIngester()
+    ingester = TelemetryIngester(
+        db_host=os.getenv("DB_HOST", "localhost"),
+        db_port=int(os.getenv("DB_PORT", 5432)),
+        db_user=os.getenv("DB_USER", "uora"),
+        db_password=os.getenv("DB_PASSWORD", "uora12345"),
+        db_name=os.getenv("DB_NAME", "uora_metrics"),
+    )
 
     # Test with sample Envoy log lines (parsed before DB connection)
     test_lines = [
@@ -240,8 +247,15 @@ async def main():
     # Attempt DB flush — skip gracefully if TimescaleDB not running
     try:
         await ingester.start()
-        await ingester.stop()  # flushes buffer
-        print("✓ Flushed to TimescaleDB")
+        if os.getenv("DB_HOST"):
+            print("✓ Ingester running in daemon mode...")
+            # Run periodic flush in background
+            asyncio.create_task(ingester.run_periodic_flush())
+            while True:
+                await asyncio.sleep(3600)
+        else:
+            await ingester.stop()  # flushes buffer
+            print("✓ Flushed to TimescaleDB")
     except Exception as e:
         print(f"⚠ DB not available (expected in dev without Docker): {e}")
         print("✓ Test complete (parse/buffer validated; DB flush skipped)")

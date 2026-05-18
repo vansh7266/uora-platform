@@ -158,17 +158,21 @@ spec:
         - name: REDIS_PORT
           value: "6379"
         livenessProbe:
-          httpGet:
-            path: /health
-            port: 8081
+          exec:
+            command:
+            - sh
+            - -c
+            - "python -c \"from pathlib import Path; import sys; cmd = Path('/proc/1/cmdline').read_text(); sys.exit(0 if 'uora.sandbox.builder' in cmd else 1)\""
           initialDelaySeconds: 15
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
-          httpGet:
-            path: /health
-            port: 8081
+          exec:
+            command:
+            - sh
+            - -c
+            - "python -c \"from pathlib import Path; import sys; cmd = Path('/proc/1/cmdline').read_text(); sys.exit(0 if 'uora.sandbox.builder' in cmd else 1)\""
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 3

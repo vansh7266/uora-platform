@@ -1,3 +1,4 @@
+import json
 """
 UORA Submission Service -- Production Hardened
 Handles: file upload -> virus scan -> MinIO storage -> build queue
@@ -7,14 +8,16 @@ Auth: Google OAuth2 + API token, rate limiting, session management
 import os
 import uuid
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Depends, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import aioboto3
+import asyncpg
 import redis.asyncio as redis
 import httpx
 from jose import jwt, JWTError
@@ -61,6 +64,20 @@ async def lifespan(app: FastAPI):
         password=REDIS_PASSWORD or None,
         decode_responses=True,
     )
+    
+    # Init TimescaleDB
+    try:
+        timescale_pool = await asyncpg.create_pool(
+            host=os.getenv("TIMESCALE_HOST", "timescaledb"),
+            port=int(os.getenv("TIMESCALE_PORT", "5432")),
+            user=os.getenv("TIMESCALE_USER", "uora"),
+            password=os.getenv("TIMESCALE_PASSWORD", "uora12345"),
+            database=os.getenv("TIMESCALE_DB", "uora_metrics"),
+            min_size=1,
+            max_size=5,
+        )
+    except Exception as e:
+        logger.error("Failed to connect to TimescaleDB: %s", e)
     # Init MinIO bucket
     try:
         session = get_minio_session()
@@ -78,6 +95,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if redis_pool:
         await redis_pool.close()
+    if timescale_pool:
+        await timescale_pool.close()
 
 
 app = FastAPI(title="UORA Submission Service", version="2.0.0", lifespan=lifespan)
@@ -131,19 +150,14 @@ async def get_session_token(request: Request) -> Optional[str]:
 async def require_auth(request: Request) -> dict:
     """
     Authentication dependency.
-    - If UORA_API_TOKEN is empty (dev mode), all requests pass.
-    - Otherwise, requires a valid X-UORA-Token header or uora_session cookie.
+    Requires a valid X-UORA-Token header or uora_session cookie.
     """
-    if not UORA_API_TOKEN:
-        # Dev mode — no auth required
-        return {"user": "dev", "source": "dev_mode"}
-
     token = await get_session_token(request)
     if not token:
         raise HTTPException(401, "Authentication required")
 
     # Check API token directly
-    if token == UORA_API_TOKEN:
+    if UORA_API_TOKEN and token == UORA_API_TOKEN:
         return {"user": "api_client", "source": "api_token"}
 
     # Check session token (JWT from OAuth flow)
@@ -356,28 +370,8 @@ async def auth_register(body: RegisterRequest):
         response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
         return response
 
-    # No Redis — dev mode instant registration
-    user_id = str(uuid.uuid4())
-    session_payload = {
-        "sub": user_id,
-        "email": body.email,
-        "name": body.name.strip(),
-        "team": body.team.strip() or "Solo",
-        "iat": int(datetime.now(timezone.utc).timestamp()),
-    }
-    session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
-    response = JSONResponse(status_code=201, content={
-        "message": "Account created (dev mode)",
-        "token": session_token,
-        "user": {
-            "id": user_id,
-            "email": body.email,
-            "name": body.name.strip(),
-            "team": body.team.strip() or "Solo",
-        },
-    })
-    response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
-    return response
+    # No Redis — fail securely
+    raise HTTPException(503, "Authentication service temporarily unavailable")
 
 
 @app.post("/auth/login")
@@ -415,27 +409,8 @@ async def auth_login(body: LoginRequest):
         response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
         return response
 
-    # No Redis — dev mode login (accept anything)
-    session_payload = {
-        "sub": f"dev-{body.email}",
-        "email": body.email,
-        "name": body.email.split("@")[0],
-        "team": "Dev Team",
-        "iat": int(datetime.now(timezone.utc).timestamp()),
-    }
-    session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
-    response = JSONResponse(content={
-        "message": "Login successful (dev mode)",
-        "token": session_token,
-        "user": {
-            "id": f"dev-{body.email}",
-            "email": body.email,
-            "name": body.email.split("@")[0],
-            "team": "Dev Team",
-        },
-    })
-    response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
-    return response
+    # No Redis — fail securely
+    raise HTTPException(503, "Authentication service temporarily unavailable")
 
 
 # --- Build Queue Task ---
@@ -573,6 +548,64 @@ async def list_submissions(
         results.append({"submission_id": sid, **data})
 
     return {"submissions": results, "count": len(results)}
+
+
+@app.get("/api/v1/leaderboard")
+async def stream_leaderboard(request: Request):
+    """SSE endpoint for real-time leaderboard updates from TimescaleDB."""
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            
+            if not timescale_pool:
+                await asyncio.sleep(5)
+                continue
+
+            try:
+                async with timescale_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        WITH latest_scores AS (
+                            SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate,
+                                   ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) as rn
+                            FROM benchmark_scores
+                        )
+                        SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate
+                        FROM latest_scores
+                        WHERE rn = 1
+                        ORDER BY composite_score DESC
+                        LIMIT 10
+                        """
+                    )
+                    
+                    leaderboard_data = []
+                    for rank, row in enumerate(rows, 1):
+                        team_name = f"Team {row['submission_id'][:8]}"
+                        if redis_pool:
+                            sub_data = await redis_pool.hgetall(f"submission:{row['submission_id']}")
+                            if sub_data and "team" in sub_data:
+                                team_name = sub_data["team"]
+                                
+                        leaderboard_data.append({
+                            "id": row["submission_id"],
+                            "rank": rank,
+                            "teamName": team_name,
+                            "compositeScore": round(row["composite_score"], 2) if row["composite_score"] else 0,
+                            "throughput": round(row["throughput"], 0) if row["throughput"] else 0,
+                            "latency": round(row["p99_latency_ns"] / 1_000_000, 2) if row["p99_latency_ns"] else 0,
+                            "correctness": round(row["correctness_rate"] * 100, 2) if row["correctness_rate"] else 0,
+                            "status": "online"
+                        })
+                    
+                    yield f"data: {json.dumps(leaderboard_data)}\\n\\n"
+            except Exception as e:
+                logger.error(f"Error fetching leaderboard: {e}")
+            
+            await asyncio.sleep(2)
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

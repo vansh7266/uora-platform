@@ -20,10 +20,16 @@ class Order:
     order_type: str     # "limit", "market", "ioc", "fok"
     price: Optional[float]  # None for market orders
     quantity: int
-    timestamp: int = field(default_factory=lambda: time.time_ns())
-    participant_id: str = field(default_factory=lambda: f"anon-{uuid.uuid4().hex}")
+    timestamp: int = 0
+    participant_id: str = ""
     filled_qty: int = 0
     status: str = "pending"  # pending, partial_fill, filled, cancelled
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = time.time_ns()
+        if not self.participant_id:
+            self.participant_id = self.id
 
     @property
     def remaining_qty(self) -> int:

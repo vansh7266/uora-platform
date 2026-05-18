@@ -20,6 +20,8 @@ spec:
           value: "30"
         - name: SCENARIO_FILE
           value: "data/lobster/sample_actions.json"
+        - name: SUBMISSION_ID
+          value: "00000000-0000-0000-0000-000000000000" # Replaced by controller at runtime
         resources:
           requests:
             cpu: "2"

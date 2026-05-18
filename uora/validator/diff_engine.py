@@ -10,6 +10,7 @@ import json
 import math
 import sys
 import time
+import difflib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -87,16 +88,8 @@ def _ged_normalized(ref_graph: nx.DiGraph, contestant_graph: nx.DiGraph) -> floa
         1.0 = perfect match (GED = 0)
         0.0 = completely different
 
-    For graphs with ≤15 nodes: uses exact GED via ``nx.graph_edit_distance``
-    with a 0.5 s timeout per computation.
-    For larger graphs: falls back to Jaccard similarity on node + edge sets.
-
-    Args:
-        ref_graph: Reference (ground-truth) state graph.
-        contestant_graph: Contestant engine's state graph.
-
-    Returns:
-        Normalised similarity score in [0.0, 1.0].
+    Computes structural similarity between two order graphs.
+    Replaces exact GED with SequenceMatcher for O(N^2) instead of NP-Hard timeouts.
     """
     n_ref = ref_graph.number_of_nodes()
     n_con = contestant_graph.number_of_nodes()
@@ -107,35 +100,12 @@ def _ged_normalized(ref_graph: nx.DiGraph, contestant_graph: nx.DiGraph) -> floa
     if n_ref == 0 or n_con == 0:
         return 0.0
 
-    # Exact GED for small graphs
-    if n_ref <= 15 and n_con <= 15:
-        try:
-            ged = nx.graph_edit_distance(
-                ref_graph,
-                contestant_graph,
-                timeout=0.5,
-            )
-        except (nx.NetworkXError, ValueError):
-            ged = None
+    # Serialize graphs into deterministic edge sequences
+    ref_seq = sorted(f"{u}->{v}" for u, v in ref_graph.edges())
+    con_seq = sorted(f"{u}->{v}" for u, v in contestant_graph.edges())
 
-        if ged is not None:
-            max_edits = max(n_ref, n_con) + max(ref_graph.number_of_edges(),
-                                                  contestant_graph.number_of_edges())
-            max_edits = max(max_edits, 1)  # avoid division by zero
-            return max(0.0, 1.0 - (ged / max_edits))
-
-    # Jaccard fallback for large graphs
-    ref_nodes = set(ref_graph.nodes())
-    con_nodes = set(contestant_graph.nodes())
-    ref_edges = set(ref_graph.edges())
-    con_edges = set(contestant_graph.edges())
-
-    node_jaccard = (len(ref_nodes & con_nodes) /
-                    len(ref_nodes | con_nodes)) if (ref_nodes | con_nodes) else 1.0
-    edge_jaccard = (len(ref_edges & con_edges) /
-                    len(ref_edges | con_edges)) if (ref_edges | con_edges) else 1.0
-
-    return math.sqrt(node_jaccard * edge_jaccard)
+    sm = difflib.SequenceMatcher(None, ref_seq, con_seq)
+    return sm.ratio()
 
 
 class CorrectnessValidator:
@@ -199,6 +169,20 @@ class CorrectnessValidator:
 
         # Check market invariants on final state
         self._check_market_invariants()
+
+        # L4: State Graph / Determinism Check
+        ref_graph = _build_state_graph(reference_states)
+        con_graph = _build_state_graph(contestant_responses)
+        similarity = _ged_normalized(ref_graph, con_graph)
+        
+        if similarity < 1.0:
+            self.violations.append(Violation(
+                level=4,
+                order_id="system",
+                expected="similarity=1.0",
+                actual=f"similarity={similarity:.4f}",
+                description="L4 validation failed: contestant state machine diverges from reference",
+            ))
 
         return {
             "total_actions": len(actions),

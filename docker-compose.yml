@@ -75,6 +75,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONUNBUFFERED=1
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-uora}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-uora12345}
@@ -206,6 +207,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  # --- Telemetry Ingester (gRPC ALS server) ---
+  ingester:
+    build:
+      context: .
+      dockerfile: uora/telemetry/Dockerfile
+    container_name: uora-ingester
+    ports:
+      - "50051:50051"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_USER=${TIMESCALE_USER:-uora}
+      - DB_PASSWORD=${TIMESCALE_PASSWORD:-uora12345}
+      - DB_NAME=${TIMESCALE_DB:-uora_metrics}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-uora12345}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
 
 networks:
   backend:

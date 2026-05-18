@@ -143,37 +143,54 @@ resource "aws_security_group" "uora_sg" {
   }
 }
 
-# Find latest Ubuntu 22.04 AMI
-data "aws_ami" "ubuntu" {
-  most_recent = true
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 20.0"
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  cluster_name    = "uora-bot-fleet-cluster"
+  cluster_version = "1.30"
+
+  cluster_endpoint_public_access  = true
+
+  vpc_id                   = aws_vpc.uora_vpc.id
+  subnet_ids               = [aws_subnet.uora_subnet.id]
+  control_plane_subnet_ids = [aws_subnet.uora_subnet.id]
+
+  # EKS Managed Node Group(s)
+  eks_managed_node_group_defaults = {
+    instance_types = ["c6i.2xlarge", "m5.xlarge"]
   }
 
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+  eks_managed_node_groups = {
+    bot_fleet = {
+      min_size     = 2
+      max_size     = 100
+      desired_size = 5
 
-  owners = ["099720109477"] # Canonical
-}
+      instance_types = ["c6i.2xlarge"]
+      capacity_type  = "SPOT"
+      
+      labels = {
+        role = "bot-fleet-worker"
+      }
 
-resource "aws_instance" "uora_node" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = var.instance_type
-  key_name      = var.key_name
-  subnet_id     = aws_subnet.uora_subnet.id
-  
-  vpc_security_group_ids = [aws_security_group.uora_sg.id]
+      tags = {
+        ExtraTag = "UORA-Bot-Fleet"
+      }
+    }
+    
+    validators = {
+      min_size     = 2
+      max_size     = 10
+      desired_size = 2
 
-  root_block_device {
-    volume_size = 100
-    volume_type = "gp3"
+      instance_types = ["m6i.xlarge"]
+      capacity_type  = "ON_DEMAND"
+    }
   }
 
   tags = {
-    Name = "uora-main-node"
+    Environment = "production"
+    Project     = "UORA-IICPC"
   }
 }

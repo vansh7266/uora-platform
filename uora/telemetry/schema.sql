@@ -57,9 +57,7 @@ SELECT
     time_bucket('1 minute', time) AS bucket,
     submission_id,
     COUNT(*) AS throughput,
-    percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ns) AS p50,
-    percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ns) AS p90,
-    percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ns) AS p99
+    AVG(latency_ns) AS avg_latency
 FROM latency_events
 GROUP BY bucket, submission_id;
 
