@@ -90,7 +90,7 @@ export default function LandingPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-uora-surface border border-uora-border-light text-xs font-mono text-slate-400 mb-8"
           >
             <div className="w-1.5 h-1.5 rounded-full bg-uora-cyan animate-pulse" />
-            Production-Grade HFT Benchmarking
+            UORA Open-Source HFT Challenge
           </motion.div>
 
           {/* Title with glitch reveal */}

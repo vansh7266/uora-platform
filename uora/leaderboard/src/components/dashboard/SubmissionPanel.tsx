@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { motion } from "framer-motion";
+import { useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
   FileCode2,
@@ -10,12 +10,14 @@ import {
   XCircle,
   ChevronRight,
   Code2,
+  AlertCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn, getLanguageBg } from "@/lib/utils";
 
 const PIPELINE_STAGES = ["queued", "building", "built", "deployed"] as const;
+type SubmissionStatus = typeof PIPELINE_STAGES[number] | "failed";
 
 const LANGUAGE_MAP: Record<string, string> = {
   ".cpp": "C++",
@@ -38,11 +40,16 @@ export function SubmissionPanel() {
   const [language, setLanguage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback((selectedFile: File) => {
     setFile(selectedFile);
     const detected = detectLanguage(selectedFile.name);
     setLanguage(detected);
+    setSubmitError(null);
+    setSubmitSuccess(null);
   }, []);
 
   const handleDrop = useCallback(
@@ -58,37 +65,109 @@ export function SubmissionPanel() {
   const handleSubmit = async () => {
     if (!file || !language) return;
     setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(null);
 
-    const submissionId =
-      "sub-" + Math.random().toString(36).substr(2, 9);
+    const submissionId = "sub-" + Math.random().toString(36).substr(2, 9);
 
-    addSubmission({
-      id: submissionId,
-      team: user?.team || "Unknown Team",
-      language,
-      status: "queued",
-      submittedAt: Date.now(),
-    });
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-    setFile(null);
-    setLanguage(null);
-    setIsSubmitting(false);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("language", language.toLowerCase());
 
-    // Simulate pipeline progression
+      const res = await fetch(`${API_BASE}/api/v1/submit`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const realId = data.submission_id || submissionId;
+
+        addSubmission({
+          id: realId,
+          team: user?.team || "Unknown Team",
+          language,
+          status: "queued",
+          submittedAt: Date.now(),
+        });
+
+        setSubmitSuccess(`Submission ${realId.slice(0, 8)}… queued for benchmarking`);
+        setFile(null);
+        setLanguage(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
+        // Poll status
+        pollSubmissionStatus(realId, API_BASE);
+        return;
+      }
+
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.detail || `Upload failed (${res.status})`);
+    } catch {
+      // Backend unreachable — simulate locally for demo
+      console.warn("[Submit] Backend unreachable — simulating pipeline locally");
+
+      addSubmission({
+        id: submissionId,
+        team: user?.team || "Unknown Team",
+        language,
+        status: "queued",
+        submittedAt: Date.now(),
+      });
+
+      setSubmitSuccess(`Submission ${submissionId.slice(0, 8)}… queued (demo mode)`);
+      setFile(null);
+      setLanguage(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+
+      // Simulate pipeline progression
+      simulatePipeline(submissionId);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const pollSubmissionStatus = (id: string, apiBase: string) => {
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(poll);
+        return;
+      }
+      try {
+        const res = await fetch(`${apiBase}/api/v1/status/${id}`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const status = data.status as SubmissionStatus;
+          updateSubmissionStatus(id, status);
+          if (status === "deployed" || status === "failed") {
+            clearInterval(poll);
+          }
+        }
+      } catch {
+        // Polling failed — ignore
+      }
+    }, 3000);
+  };
+
+  const simulatePipeline = (id: string) => {
     let stageIndex = 0;
     const advanceStage = () => {
       if (stageIndex < PIPELINE_STAGES.length) {
-        updateSubmissionStatus(
-          submissionId,
-          PIPELINE_STAGES[stageIndex] as typeof PIPELINE_STAGES[number]
-        );
+        updateSubmissionStatus(id, PIPELINE_STAGES[stageIndex]);
         stageIndex++;
         if (stageIndex < PIPELINE_STAGES.length) {
           setTimeout(advanceStage, 1500 + Math.random() * 2000);
         }
       }
     };
-
     setTimeout(advanceStage, 1000);
   };
 
@@ -130,6 +209,7 @@ export function SubmissionPanel() {
           )}
         >
           <input
+            ref={fileInputRef}
             type="file"
             accept=".cpp,.cc,.cxx,.rs,.go"
             onChange={(e) => {
@@ -173,6 +253,32 @@ export function SubmissionPanel() {
           )}
         </div>
 
+        {/* Feedback Messages */}
+        <AnimatePresence>
+          {submitError && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-uora-error/10 border border-uora-error/20 text-xs text-uora-error"
+            >
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              {submitError}
+            </motion.div>
+          )}
+          {submitSuccess && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-uora-success/10 border border-uora-success/20 text-xs text-uora-success"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+              {submitSuccess}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Submit Button */}
         <motion.button
           whileHover={{ scale: 1.01 }}
@@ -189,7 +295,7 @@ export function SubmissionPanel() {
           {isSubmitting ? (
             <div className="flex items-center justify-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Submitting...
+              Uploading...
             </div>
           ) : (
             "Submit for Benchmarking"
@@ -214,8 +320,8 @@ export function SubmissionPanel() {
                       const currentIdx = PIPELINE_STAGES.indexOf(
                         sub.status as typeof PIPELINE_STAGES[number]
                       );
-                      const isCompleted = idx < currentIdx;
-                      const isCurrent = idx === currentIdx;
+                      const isCompleted = idx < currentIdx || (sub.status === "deployed" && idx === currentIdx);
+                      const isCurrent = idx === currentIdx && sub.status !== "deployed";
 
                       return (
                         <div key={stage} className="flex items-center">

@@ -6,7 +6,6 @@ Auth: Google OAuth2 + API token, rate limiting, session management
 
 import os
 import uuid
-import hashlib
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -269,6 +268,174 @@ async def auth_me(auth_data: dict = Depends(require_auth)):
         "email": auth_data.get("payload", {}).get("email"),
         "name": auth_data.get("payload", {}).get("name"),
     }
+
+
+# --- Email / Password Auth ---
+
+try:
+    import bcrypt
+    _HAS_BCRYPT = True
+except ImportError:
+    import hashlib as _hashlib
+    _HAS_BCRYPT = False
+    logger.warning("bcrypt not installed — using SHA-256 password hashing (dev only)")
+
+
+def _hash_password(password: str) -> str:
+    if _HAS_BCRYPT:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return _hashlib.sha256(password.encode()).hexdigest()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    if _HAS_BCRYPT:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    return _hashlib.sha256(password.encode()).hexdigest() == hashed
+
+
+from pydantic import BaseModel, EmailStr as _EmailStr
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    team: str = "Solo"
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/auth/register")
+async def auth_register(body: RegisterRequest):
+    """Register a new contestant with email + password."""
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    if not body.name.strip():
+        raise HTTPException(400, "Name is required")
+
+    user_key = f"user:{body.email}"
+
+    if redis_pool:
+        existing = await redis_pool.hget(user_key, "email")
+        if existing:
+            raise HTTPException(409, "Email already registered")
+
+        user_id = str(uuid.uuid4())
+        await redis_pool.hset(user_key, mapping={
+            "id": user_id,
+            "email": body.email,
+            "name": body.name.strip(),
+            "team": body.team.strip() or "Solo",
+            "password_hash": _hash_password(body.password),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+        # Create session JWT
+        session_payload = {
+            "sub": user_id,
+            "email": body.email,
+            "name": body.name.strip(),
+            "team": body.team.strip() or "Solo",
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+        }
+        session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+
+        response = JSONResponse(status_code=201, content={
+            "message": "Account created",
+            "token": session_token,
+            "user": {
+                "id": user_id,
+                "email": body.email,
+                "name": body.name.strip(),
+                "team": body.team.strip() or "Solo",
+            },
+        })
+        response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+        return response
+
+    # No Redis — dev mode instant registration
+    user_id = str(uuid.uuid4())
+    session_payload = {
+        "sub": user_id,
+        "email": body.email,
+        "name": body.name.strip(),
+        "team": body.team.strip() or "Solo",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+    }
+    session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+    response = JSONResponse(status_code=201, content={
+        "message": "Account created (dev mode)",
+        "token": session_token,
+        "user": {
+            "id": user_id,
+            "email": body.email,
+            "name": body.name.strip(),
+            "team": body.team.strip() or "Solo",
+        },
+    })
+    response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+    return response
+
+
+@app.post("/auth/login")
+async def auth_login(body: LoginRequest):
+    """Login with email + password."""
+    user_key = f"user:{body.email}"
+
+    if redis_pool:
+        user_data = await redis_pool.hgetall(user_key)
+        if not user_data:
+            raise HTTPException(401, "Invalid email or password")
+
+        if not _verify_password(body.password, user_data.get("password_hash", "")):
+            raise HTTPException(401, "Invalid email or password")
+
+        session_payload = {
+            "sub": user_data.get("id", ""),
+            "email": body.email,
+            "name": user_data.get("name", ""),
+            "team": user_data.get("team", "Solo"),
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+        }
+        session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+
+        response = JSONResponse(content={
+            "message": "Login successful",
+            "token": session_token,
+            "user": {
+                "id": user_data.get("id", ""),
+                "email": body.email,
+                "name": user_data.get("name", ""),
+                "team": user_data.get("team", "Solo"),
+            },
+        })
+        response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+        return response
+
+    # No Redis — dev mode login (accept anything)
+    session_payload = {
+        "sub": f"dev-{body.email}",
+        "email": body.email,
+        "name": body.email.split("@")[0],
+        "team": "Dev Team",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+    }
+    session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+    response = JSONResponse(content={
+        "message": "Login successful (dev mode)",
+        "token": session_token,
+        "user": {
+            "id": f"dev-{body.email}",
+            "email": body.email,
+            "name": body.email.split("@")[0],
+            "team": "Dev Team",
+        },
+    })
+    response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+    return response
 
 
 # --- Build Queue Task ---

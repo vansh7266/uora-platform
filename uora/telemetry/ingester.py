@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 try:
@@ -106,7 +106,7 @@ class TelemetryIngester:
         try:
             ts = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
         except ValueError:
-            ts = datetime.utcnow()
+            ts = datetime.now(timezone.utc)
 
         # Determine endpoint
         endpoint = path.split("?")[0]  # Strip query params
