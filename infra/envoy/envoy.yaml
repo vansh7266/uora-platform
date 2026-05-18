@@ -35,12 +35,9 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       inline_code: |
                         function envoy_on_request(request_handle)
-                          -- os.time() is seconds; multiply to get nanosecond-scale epoch.
-                          -- NOTE: os.time() has 1s resolution in LuaJIT. For sub-second
-                          -- precision we use the Envoy start_time from access log (%START_TIME(%s%9f)%)
-                          -- which is the authoritative nanosecond timestamp.
-                          -- This header gives downstream services a best-effort ns marker.
-                          local start_ns = os.time() * 1000000000
+                          -- ngx.now() returns a float with millisecond resolution.
+                          -- Multiply by 1e6 to convert ms -> ns for downstream consumers.
+                          local start_ns = math.floor(ngx.now() * 1e6)
                           request_handle:headers():add("x-uora-start-time", tostring(start_ns))
 
                           -- Store in stream dynamic metadata so response phase can read it
@@ -52,7 +49,7 @@ static_resources:
                         function envoy_on_response(response_handle)
                           local meta = response_handle:streamInfo():dynamicMetadata():get("uora.lua")
                           if meta and meta["start_time_ns"] then
-                            local end_ns = os.time() * 1000000000
+                            local end_ns = math.floor(ngx.now() * 1e6)
                             local latency_ns = end_ns - meta["start_time_ns"]
                             response_handle:headers():add("x-uora-latency-ns", tostring(latency_ns))
                           end

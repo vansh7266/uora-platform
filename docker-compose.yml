@@ -4,53 +4,65 @@ services:
     image: minio/minio:latest
     container_name: uora-minio
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     environment:
-      MINIO_ROOT_USER: uora
-      MINIO_ROOT_PASSWORD: uora12345
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-uora}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-uora12345}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    networks:
+      - backend
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    mem_limit: 512m
+    cpus: 0.5
 
   # --- Time-Series Database ---
   timescaledb:
     image: timescale/timescaledb:latest-pg15
     container_name: uora-timescaledb
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: uora
-      POSTGRES_PASSWORD: uora12345
-      POSTGRES_DB: uora_metrics
+      POSTGRES_USER: ${TIMESCALE_USER:-uora}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-uora12345}
+      POSTGRES_DB: ${TIMESCALE_DB:-uora_metrics}
     volumes:
       - timescale_data:/var/lib/postgresql/data
       - ./uora/telemetry/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - backend
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U uora -d uora_metrics" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    mem_limit: 2g
+    cpus: 2.0
 
   # --- Message Broker & Cache ---
   redis:
     image: redis:7-alpine
     container_name: uora-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-uora12345}
+    networks:
+      - backend
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-uora12345}", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
+    mem_limit: 512m
+    cpus: 0.5
 
   # --- Submission API ---
   submission:
@@ -60,21 +72,25 @@ services:
     container_name: uora-submission
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=uora
-      - MINIO_SECRET_KEY=uora12345
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-uora}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-uora12345}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-uora12345}
       - TIMESCALE_HOST=timescaledb
       - TIMESCALE_PORT=5432
-      - TIMESCALE_USER=uora
-      - TIMESCALE_PASSWORD=uora12345
-      - TIMESCALE_DB=uora_metrics
+      - TIMESCALE_USER=${TIMESCALE_USER:-uora}
+      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-uora12345}
+      - TIMESCALE_DB=${TIMESCALE_DB:-uora_metrics}
+      - BUILDKIT_HOST=tcp://buildkitd:1234
+      - REGISTRY_URL=registry:5000
       - BUILD_TIMEOUT=60
       - MAX_UPLOAD_SIZE=52428800
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./uploads:/app/uploads
     depends_on:
       minio:
@@ -83,7 +99,90 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+    networks:
+      - backend
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # --- BuildKit Daemon (replaces Docker socket) ---
+  buildkitd:
+    image: moby/buildkit:latest
+    container_name: uora-buildkitd
+    command: --addr tcp://0.0.0.0:1234
+    networks:
+      - backend
+      - build_net
+    volumes:
+      - buildkit_cache:/var/lib/buildkit
+    privileged: false
+    mem_limit: 4g
+    cpus: 4.0
+    healthcheck:
+      test: [ "CMD", "buildctl", "debug", "workers" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- Builder Service (consumes Redis build queue) ---
+  builder:
+    build:
+      context: .
+      dockerfile: uora/builder/Dockerfile
+    container_name: uora-builder
+    env_file:
+      - .env
+    environment:
+      - BUILDKIT_HOST=tcp://buildkitd:1234
+      - REGISTRY_URL=registry:5000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-uora12345}
+    depends_on:
+      buildkitd:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - build_net
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2.0
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # --- Local Docker Registry (contestant images) ---
+  registry:
+    image: registry:2
+    container_name: uora-registry
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - backend
+      - build_net
+    mem_limit: 512m
+    cpus: 0.5
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:5000/v2/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # --- Envoy Sidecar (for telemetry capture) ---
   # In production, this runs as a sidecar in the contestant pod.
@@ -97,8 +196,26 @@ services:
     volumes:
       - ./infra/envoy/envoy.yaml:/etc/envoy/envoy.yaml
     command: [ "-c", "/etc/envoy/envoy.yaml", "--log-level", "debug" ]
+    networks:
+      - backend
+    mem_limit: 256m
+    cpus: 0.25
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9901/ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  backend:
+    driver: bridge
+  build_net:
+    driver: bridge
+    internal: true
 
 volumes:
   minio_data:
   timescale_data:
   redis_data:
+  buildkit_cache:
+  registry_data:

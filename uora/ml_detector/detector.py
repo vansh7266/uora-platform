@@ -79,7 +79,7 @@ class MLAnomalyDetector:
     def fit(self) -> None:
         """Train the Isolation Forest on all collected normal profiles."""
         if len(self.normal_profiles) < 10:
-            # Not enough data — use synthetic normal data for hackathon demo
+            # Not enough data — use synthetic normal data for initial baseline
             self._generate_synthetic_normal_data()
 
         X = np.array([[f.latency_entropy,
@@ -236,8 +236,11 @@ class MLAnomalyDetector:
         # 3. Volume conservation (simplified)
         volume_conservation_delta = abs(len(expected_actions) - len(actual_actions))
 
-        # 4. State transition GED (placeholder — full implementation needs state graphs)
-        state_transition_ged = 0.0 if pattern_correlation > 0.9 else 0.3
+        # 4. State transition GED — real Graph Edit Distance via NetworkX
+        from uora.validator.diff_engine import _build_state_graph, _ged_normalized
+        ref_graph = _build_state_graph(expected_actions)
+        con_graph = _build_state_graph(actual_actions)
+        state_transition_ged = _ged_normalized(ref_graph, con_graph)
 
         # 5. Latency trend slope (linear regression on time series)
         if len(latencies) >= 2:
@@ -247,12 +250,25 @@ class MLAnomalyDetector:
         else:
             latency_trend_slope = 0.0
 
-        # 6. Throughput variance (split into 10 windows)
-        window_size = max(1, len(latencies) // 10)
-        throughputs = []
-        for i in range(0, len(latencies), window_size):
-            throughputs.append(len(latencies[i:i+window_size]))
-        throughput_variance = float(np.var(throughputs)) if throughputs else 0.0
+        # 6. Throughput variance — time-bucketed event counts per second
+        #    Use cumulative latency as pseudo-wall-clock; bucket into 1-second windows.
+        if len(latencies) >= 2:
+            cumulative_s = np.cumsum(arr) / 1e9          # nanoseconds → seconds
+            total_time = cumulative_s[-1]
+            if total_time > 0:
+                n_buckets = max(1, int(np.ceil(total_time)))
+                bucket_counts = np.zeros(n_buckets, dtype=np.int64)
+                bucket_indices = np.minimum(
+                    np.floor(cumulative_s).astype(np.int64),
+                    n_buckets - 1,
+                )
+                for bi in bucket_indices:
+                    bucket_counts[bi] += 1
+                throughput_variance = float(np.var(bucket_counts))
+            else:
+                throughput_variance = 0.0
+        else:
+            throughput_variance = 0.0
 
         # 7. Error rate
         error_rate = errors / total if total > 0 else 0.0

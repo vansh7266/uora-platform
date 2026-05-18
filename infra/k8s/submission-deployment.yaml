@@ -1,3 +1,44 @@
+# --- ServiceAccount for Builder ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: uora-builder
+  namespace: uora
+---
+# --- Role for Builder (minimal permissions) ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: uora-builder-role
+  namespace: uora
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["uora-builder-secrets"]
+---
+# --- RoleBinding for Builder ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: uora-builder-binding
+  namespace: uora
+subjects:
+  - kind: ServiceAccount
+    name: uora-builder
+    namespace: uora
+roleRef:
+  kind: Role
+  name: uora-builder-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# --- Submission Deployment ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +56,12 @@ spec:
       labels:
         app: uora-submission
     spec:
+      runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        readOnlyRootFilesystem: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: uora-submission
         image: uora-submission:latest # Replace with ECR/registry URI
@@ -31,8 +78,24 @@ spec:
         env:
         - name: WORKERS
           value: "4"
-        # Sandbox limitations would be configured here using runtimeClassName: gvisor
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
 ---
+# --- Submission Service ---
 apiVersion: v1
 kind: Service
 metadata:
@@ -45,4 +108,83 @@ spec:
     - protocol: TCP
       port: 8000
       targetPort: 8000
+  type: ClusterIP
+---
+# --- Builder Deployment (consumes Redis build queue) ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uora-builder
+  namespace: uora
+  labels:
+    app: uora-builder
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: uora-builder
+  template:
+    metadata:
+      labels:
+        app: uora-builder
+    spec:
+      serviceAccountName: uora-builder
+      runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        readOnlyRootFilesystem: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: uora-builder
+        image: uora-builder:latest # Replace with ECR/registry URI
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8081
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+        env:
+        - name: BUILDKIT_HOST
+          value: "tcp://buildkitd:1234"
+        - name: REGISTRY_URL
+          value: "registry:5000"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+# --- Builder Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uora-builder-svc
+  namespace: uora
+spec:
+  selector:
+    app: uora-builder
+  ports:
+    - protocol: TCP
+      port: 8081
+      targetPort: 8081
   type: ClusterIP

@@ -28,7 +28,7 @@ info:
   version: "1.0.0"
   contact:
     name: UORA Platform
-    email: uora@iicpc2026.dev
+    email: platform@uora.dev
 
 servers:
   - url: http://localhost:8080

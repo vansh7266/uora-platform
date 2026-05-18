@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- 1. Latency Events (Raw Telemetry)
 CREATE TABLE IF NOT EXISTS latency_events (
     time            TIMESTAMPTZ NOT NULL,
-    submission_id   UUID NOT NULL,
+    submission_id   UUID,
     bot_id          TEXT,
     order_id        TEXT,
     endpoint        TEXT,
@@ -49,7 +49,7 @@ SELECT
     time_bucket('1 minute', time) AS bucket,
     submission_id,
     COUNT(*) AS throughput,
-    AVG(latency_ns) AS p50,
+    percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ns) AS p50,
     percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ns) AS p90,
     percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ns) AS p99
 FROM latency_events
@@ -59,3 +59,6 @@ GROUP BY bucket, submission_id;
 CREATE INDEX IF NOT EXISTS idx_latency_submission_id ON latency_events (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_violations_submission_id ON correctness_violations (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_submission_id ON benchmark_scores (submission_id, time DESC);
+
+-- 6. Continuous Aggregate Refresh Policy
+SELECT add_continuous_aggregate_policy('latency_1min', INTERVAL '1 minute', INTERVAL '1 minute', if_not_exists => true);

@@ -7,14 +7,12 @@ Detects price-time priority violations, state machine errors, and market invaria
 from __future__ import annotations
 
 import json
-import sys
+import math
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-# Bootstrap: ensure project root (two levels above this file) is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import networkx as nx
 
 from uora.validator.reference_lob import OrderBook, Order, Fill
 
@@ -26,6 +24,101 @@ class Violation:
     expected: Any
     actual: Any
     description: str
+
+
+# ─── Graph Edit Distance Helpers ────────────────────────────────────────────
+
+def _build_state_graph(responses: list[dict]) -> nx.DiGraph:
+    """
+    Build a directed graph from order responses.
+
+    Nodes represent order states (labelled by order_id + status).
+    Edges represent transitions between states, labelled by the triggering action type.
+
+    Args:
+        responses: List of order response dicts, each with at least
+                   'order_id', 'status', 'type', and optionally 'fills'.
+
+    Returns:
+        nx.DiGraph encoding the observed state machine.
+    """
+    g = nx.DiGraph()
+    for i, resp in enumerate(responses):
+        order_id = resp.get("order_id", f"order-{i}")
+        status = resp.get("status", "unknown")
+        node_label = f"{order_id}:{status}"
+        g.add_node(node_label, order_id=order_id, status=status)
+
+        # Add transition edge from previous state of same order
+        for j in range(i - 1, -1, -1):
+            prev_resp = responses[j]
+            if prev_resp.get("order_id") == order_id:
+                prev_status = prev_resp.get("status", "unknown")
+                prev_label = f"{order_id}:{prev_status}"
+                action_type = resp.get("type", "unknown")
+                g.add_edge(prev_label, node_label, action=action_type)
+                break
+
+    return g
+
+
+def _ged_normalized(ref_graph: nx.DiGraph, contestant_graph: nx.DiGraph) -> float:
+    """
+    Compute normalised Graph Edit Distance between two state graphs.
+
+    Returns a value in [0.0, 1.0] where:
+        1.0 = perfect match (GED = 0)
+        0.0 = completely different
+
+    For graphs with ≤15 nodes: uses exact GED via ``nx.graph_edit_distance``
+    with a 0.5 s timeout per computation.
+    For larger graphs: falls back to Jaccard similarity on node + edge sets.
+
+    Args:
+        ref_graph: Reference (ground-truth) state graph.
+        contestant_graph: Contestant engine's state graph.
+
+    Returns:
+        Normalised similarity score in [0.0, 1.0].
+    """
+    n_ref = ref_graph.number_of_nodes()
+    n_con = contestant_graph.number_of_nodes()
+
+    # Trivial cases
+    if n_ref == 0 and n_con == 0:
+        return 1.0
+    if n_ref == 0 or n_con == 0:
+        return 0.0
+
+    # Exact GED for small graphs
+    if n_ref <= 15 and n_con <= 15:
+        try:
+            ged = nx.graph_edit_distance(
+                ref_graph,
+                contestant_graph,
+                timeout=0.5,
+            )
+        except (nx.NetworkXError, ValueError):
+            ged = None
+
+        if ged is not None:
+            max_edits = max(n_ref, n_con) + max(ref_graph.number_of_edges(),
+                                                  contestant_graph.number_of_edges())
+            max_edits = max(max_edits, 1)  # avoid division by zero
+            return max(0.0, 1.0 - (ged / max_edits))
+
+    # Jaccard fallback for large graphs
+    ref_nodes = set(ref_graph.nodes())
+    con_nodes = set(contestant_graph.nodes())
+    ref_edges = set(ref_graph.edges())
+    con_edges = set(contestant_graph.edges())
+
+    node_jaccard = (len(ref_nodes & con_nodes) /
+                    len(ref_nodes | con_nodes)) if (ref_nodes | con_nodes) else 1.0
+    edge_jaccard = (len(ref_edges & con_edges) /
+                    len(ref_edges | con_edges)) if (ref_edges | con_edges) else 1.0
+
+    return math.sqrt(node_jaccard * edge_jaccard)
 
 
 class CorrectnessValidator:

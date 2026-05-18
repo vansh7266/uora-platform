@@ -3,25 +3,152 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0A0E1A;
+  --foreground: #E2E8F0;
+  --surface: #111827;
+  --elevated: #1E293B;
+  --cyan: #06B6D4;
+  --blue: #3B82F6;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* Tabular nums for data display */
+.font-tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom utility classes */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.3), 0 0 40px rgba(6, 182, 212, 0.1);
+  }
+
+  .glow-cyan-sm {
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3), 0 0 40px rgba(239, 68, 68, 0.1);
+  }
+
+  .glow-red-sm {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+  }
+
+  .text-glow-cyan {
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.5), 0 0 20px rgba(6, 182, 212, 0.3);
+  }
+
+  .text-glow-red {
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.5), 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+
+  /* Grid background pattern */
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-grid-pattern-dense {
+    background-image:
+      linear-gradient(rgba(6, 182, 212, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* Dot grid pattern */
+  .bg-dot-pattern {
+    background-image: radial-gradient(circle, rgba(6, 182, 212, 0.1) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
+
+/* Anomaly flash overlay */
+@keyframes anomaly-flash {
+  0% { opacity: 0; }
+  50% { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+.anomaly-flash-overlay {
+  animation: anomaly-flash 0.5s ease-out;
+  background: radial-gradient(ellipse at center, rgba(239, 68, 68, 0.3), transparent 70%);
+}
+
+/* Liquid fill animation for score reveal */
+@keyframes liquid-rise {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0%); }
+}
+
+.liquid-fill-reveal {
+  animation: liquid-rise 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Scan line effect */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.scanline-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.3), transparent);
+  animation: scanline 8s linear infinite;
+  pointer-events: none;
+}
+
+/* ECharts dark theme overrides */
+.echarts-container {
+  background: transparent !important;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(6, 182, 212, 0.3);
+  color: #E2E8F0;
 }

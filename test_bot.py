@@ -4,7 +4,7 @@ Runs a 10-worker benchmark against the reference server.
 
 Usage:
     # Terminal 1 — start server
-    python contestant-sdk/python/reference_server.py
+    python contestant_sdk/python/reference_server.py
 
     # Terminal 2 — run test
     python test_bot.py

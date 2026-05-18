@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
+from collections import deque
 from datetime import datetime
 from typing import Optional
 
 import asyncpg
+
+logger = logging.getLogger("uora.telemetry.ingester")
 
 
 # Envoy access log format:
@@ -50,10 +54,13 @@ class TelemetryIngester:
 
         self._pool: Optional[asyncpg.Pool] = None
         self._buffer: list[dict] = []
+        self._dead_letter: deque[dict] = deque(maxlen=10_000)
+        self._flush_retries: dict[str, int] = {}  # record hash -> retry count
         self._running = False
 
     async def start(self) -> None:
         """Initialize DB connection pool."""
+        self._running = True
         self._pool = await asyncpg.create_pool(
             host=self.db_host,
             port=self.db_port,
@@ -71,6 +78,15 @@ class TelemetryIngester:
             await self._flush()
         if self._pool:
             await self._pool.close()
+
+    @property
+    def dead_letter_count(self) -> int:
+        """Number of records in the dead-letter queue."""
+        return len(self._dead_letter)
+
+    def get_dead_letter_records(self) -> list[dict]:
+        """Return a snapshot of dead-letter records for inspection/replay."""
+        return list(self._dead_letter)
 
     async def ingest_log_line(self, line: str) -> None:
         """Parse a single Envoy access log line and buffer it."""
@@ -142,11 +158,28 @@ class TelemetryIngester:
                         for r in records
                     ],
                 )
-            print(f"✓ Flushed {len(records)} records to TimescaleDB")
+            # Flush succeeded — clear retry counters for these records
+            for r in records:
+                rhash = self._record_hash(r)
+                self._flush_retries.pop(rhash, None)
+            logger.info("Flushed %d records to TimescaleDB", len(records))
         except Exception as e:
-            print(f"✗ Flush failed: {e}")
-            # Put records back in buffer for retry
-            self._buffer = records + self._buffer
+            logger.error("Flush failed (%d records): %s", len(records), e)
+            # Route records: retry up to 3 times, then dead-letter queue
+            for r in records:
+                rhash = self._record_hash(r)
+                self._flush_retries[rhash] = self._flush_retries.get(rhash, 0) + 1
+                if self._flush_retries[rhash] > 3:
+                    # Exceeded retry limit — send to dead-letter queue
+                    self._dead_letter.append(r)
+                    logger.warning(
+                        "Record moved to DLQ after %d retries (order_id=%s)",
+                        self._flush_retries[rhash], r.get("order_id", "unknown"),
+                    )
+                    self._flush_retries.pop(rhash, None)
+                else:
+                    # Still within retry limit — re-buffer
+                    self._buffer.insert(0, r)
 
     def _extract_submission_id(self, request_id: str) -> Optional[str]:
         """Extract submission_id from request_id format: sub-<uuid>-bot-<id>"""
@@ -162,6 +195,11 @@ class TelemetryIngester:
             idx = parts.index("bot")
             return parts[idx + 1] if idx + 1 < len(parts) else None
         return None
+
+    @staticmethod
+    def _record_hash(record: dict) -> str:
+        """Produce a stable hash for a record to track retry counts."""
+        return f"{record.get('order_id', '')}:{record.get('time', '')}"
 
     async def run_periodic_flush(self) -> None:
         """Background task: flush buffer every N milliseconds."""

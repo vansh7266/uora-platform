@@ -2,6 +2,13 @@ provider "aws" {
   region = var.region
 }
 
+# Restricted SSH access CIDR — tighten further in production (e.g. VPN / bastion CIDR only)
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to access SSH. Restrict to VPN/bastion in production."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
 resource "aws_vpc" "uora_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -108,20 +115,20 @@ resource "aws_security_group" "uora_sg" {
     cidr_blocks = ["10.0.0.0/16"]
   }
 
-  # MinIO
+  # MinIO (VPC-internal only — never expose S3-compatible API to the internet)
   ingress {
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["10.0.0.0/16"]
   }
 
-  # SSH
+  # SSH (restrict to VPC CIDR; tighten to bastion/VPN CIDR in production)
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_ssh_cidr]
   }
 
   egress {

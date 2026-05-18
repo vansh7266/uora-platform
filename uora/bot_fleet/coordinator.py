@@ -78,7 +78,7 @@ class BotCoordinator:
         lock      = asyncio.Lock()
 
         async def _worker(bot: TradingBot, worker_id: int) -> None:
-            nonlocal completed, _errors_ref
+            nonlocal completed
             while time.monotonic() < deadline:
                 action = random.choice(self._actions)
                 try:
@@ -103,8 +103,6 @@ class BotCoordinator:
                         logger.debug("Worker %d error: %s", worker_id, exc)
 
                 await asyncio.sleep(random.uniform(_MIN_DELAY, _MAX_DELAY))
-
-        _errors_ref = 0   # closure placeholder (actual tracking via self._errors)
 
         await asyncio.gather(*(
             _worker(bot, i) for i, bot in enumerate(self._bots)

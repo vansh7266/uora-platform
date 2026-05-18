@@ -23,7 +23,6 @@ Direction: 1 = buy, -1 = sell
 from __future__ import annotations
 
 import csv
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -85,7 +84,7 @@ def _parse_row(row: list[str]) -> Optional[dict]:
     if side is None:
         raise ValueError(f"Unknown direction: {direction}")
 
-    ts = time.time_ns()
+    ts = int(float(row[0]) * 1_000_000_000)
     pid = f"lobster-{order_id}"
 
     if event_type == 1:       # Add Order

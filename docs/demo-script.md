@@ -1,4 +1,4 @@
-# UORA Demo Script — IICPC 2026
+# UORA Demo Script
 ## 5-Minute Technical Walkthrough
 
 ### 0:00-0:30 — Introduction
@@ -37,7 +37,7 @@ Inject flash crash scenario:
 - Recovery: auto-scaling restores throughput
 
 ### 4:45-5:00 — Closing
-"UORA isn't a hackathon demo. It's production-grade infrastructure that prop trading firms could use to evaluate candidate systems. Thank you."
+"UORA isn't just a demo. It's production-grade infrastructure that prop trading firms could use to evaluate candidate systems. Thank you."
 
 ---
 

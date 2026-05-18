@@ -6,11 +6,48 @@ Formula: (Throughput × Correctness_Rate) / (p99_Latency + Resource_Usage²)
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
 import asyncpg
+import numpy as np
 import polars as pl
+
+logger = logging.getLogger("uora.scoring")
+
+
+# ─── Module-level connection pool ────────────────────────────────────────────
+
+_pool: Optional[asyncpg.Pool] = None
+
+
+async def startup(
+    db_host: str = "localhost",
+    db_port: int = 5432,
+    db_user: str = "uora",
+    db_password: str = "uora12345",
+    db_name: str = "uora_metrics",
+) -> None:
+    """Create the global connection pool. Call once at app start."""
+    global _pool
+    _pool = await asyncpg.create_pool(
+        host=db_host,
+        port=db_port,
+        user=db_user,
+        password=db_password,
+        database=db_name,
+        min_size=2,
+        max_size=20,
+    )
+
+
+async def shutdown() -> None:
+    """Close the global connection pool. Call once at app shutdown."""
+    global _pool
+    if _pool:
+        await _pool.close()
+        _pool = None
 
 
 class ScoringEngine:
@@ -37,15 +74,10 @@ class ScoringEngine:
         Compute composite score for a submission.
         Returns: score dict with all metrics.
         """
-        conn = await asyncpg.connect(
-            host=self.db_host,
-            port=self.db_port,
-            user=self.db_user,
-            password=self.db_password,
-            database=self.db_name,
-        )
+        if _pool is None:
+            raise RuntimeError("Connection pool not initialized. Call scoring.startup() first.")
 
-        try:
+        async with _pool.acquire() as conn:
             # Fetch 1-minute aggregates from continuous view
             rows = await conn.fetch(
                 """
@@ -65,6 +97,17 @@ class ScoringEngine:
                     "composite_score": 0.0,
                 }
 
+            # Compute true p99 from raw latency events
+            p99_row = await conn.fetchrow(
+                """
+                SELECT percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ns) AS p99_latency_ns
+                FROM latency_events
+                WHERE submission_id = $1
+                """,
+                submission_id,
+            )
+            p99_latency = p99_row["p99_latency_ns"] if p99_row and p99_row["p99_latency_ns"] is not None else 0
+
             # Convert to Polars DataFrame for fast computation
             df = pl.DataFrame(
                 {
@@ -79,7 +122,6 @@ class ScoringEngine:
             # Compute metrics
             avg_throughput = df["throughput"].mean()
             max_throughput = df["throughput"].max()
-            p99_latency = df["p99"].mean()  # Average p99 across minutes
             p50_latency = df["p50"].mean()
             latency_variance = df["p99"].std()
 
@@ -95,6 +137,44 @@ class ScoringEngine:
             denominator = (p99_latency / 1_000_000) + (resource_penalty ** 2)  # Convert ns to ms
 
             composite_score = numerator / max(denominator, 1.0)
+
+            # ─── ML Anomaly Detection ──────────────────────────────────────────
+            anomaly_score = 0.0
+            anomaly_reason = "Not analyzed"
+            try:
+                from uora.ml_detector.detector import MLAnomalyDetector, BenchmarkFeatures
+                detector = MLAnomalyDetector()
+                detector.fit()
+
+                # Fetch raw latencies for feature extraction
+                latency_rows = await conn.fetch(
+                    """
+                    SELECT latency_ns FROM latency_events
+                    WHERE submission_id = $1
+                    ORDER BY time DESC LIMIT 10000
+                    """,
+                    submission_id,
+                )
+                raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
+
+                features = BenchmarkFeatures(
+                    submission_id=submission_id,
+                    latency_entropy=float(np.std(np.array(raw_latencies, dtype=np.float64))) if raw_latencies else 0.0,
+                    pattern_correlation=0.0,
+                    volume_conservation_delta=0.0,
+                    state_transition_ged=0.0,
+                    latency_trend_slope=0.0,
+                    throughput_variance=float(latency_variance) if latency_variance else 0.0,
+                    error_rate=0.0,
+                    p99_to_p50_ratio=(p99_latency / (p50_latency * 1_000_000)) if p50_latency and p50_latency > 0 else 1.0,
+                )
+                result = detector.detect(features)
+                anomaly_score = result.anomaly_score
+                anomaly_reason = result.reason
+            except Exception as e:
+                logger.warning(f"Anomaly detection failed for {submission_id}: {e}")
+                anomaly_score = 0.0
+                anomaly_reason = f"Detection skipped: {str(e)[:80]}"
 
             return {
                 "submission_id": submission_id,
@@ -114,12 +194,13 @@ class ScoringEngine:
                     "rate": round(correctness_rate, 4),
                     "percentage": f"{correctness_rate * 100:.2f}%",
                 },
+                "anomaly": {
+                    "score": round(anomaly_score, 4),
+                    "reason": anomaly_reason,
+                },
                 "resource_penalty": resource_penalty,
                 "formula": "(throughput × correctness) / (p99_latency_ms + resource²)",
             }
-
-        finally:
-            await conn.close()
 
     async def _get_correctness_rate(self, conn: asyncpg.Connection, submission_id: str) -> float:
         """Fetch correctness rate from benchmark_scores table."""
@@ -137,15 +218,10 @@ class ScoringEngine:
 
     async def get_leaderboard(self, limit: int = 20) -> list[dict]:
         """Fetch top submissions by composite score."""
-        conn = await asyncpg.connect(
-            host=self.db_host,
-            port=self.db_port,
-            user=self.db_user,
-            password=self.db_password,
-            database=self.db_name,
-        )
+        if _pool is None:
+            raise RuntimeError("Connection pool not initialized. Call scoring.startup() first.")
 
-        try:
+        async with _pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT submission_id, composite_score, throughput, p99_latency_ns, correctness_rate
@@ -167,8 +243,6 @@ class ScoringEngine:
                 }
                 for i, r in enumerate(rows)
             ]
-        finally:
-            await conn.close()
 
 
 # ─── Test ────────────────────────────────────────────────────────────────────
@@ -179,11 +253,14 @@ async def test_scoring():
 
     # This will fail without DB, but shows the structure
     try:
+        await startup()
         score = await engine.compute_score("test-submission-001")
         print(f"Score: {score}")
     except Exception as e:
         print(f"Expected DB error in dev: {e}")
         print("✓ Scoring engine structure validated")
+    finally:
+        await shutdown()
 
 
 if __name__ == "__main__":

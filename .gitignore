@@ -1,24 +1,60 @@
 # UORA .gitignore
-venv/
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-*.egg
 *.egg-info/
 dist/
 build/
+.eggs/
+*.egg
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Environment
 .env
 .env.local
-uploads/
-*.log
-.DS_Store
-.idea/
+.env.*.local
+
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reports (generated at runtime)
+uora-reports/*.pdf
+uora-reports/*.html
+
+# Docker
+*.log
+
+# Data (large CSVs not committed)
 data/lobster/*.csv
 data/lobster/*.zip
+
+# Uploads
+uploads/
+
+# Secrets
+*.pem
+*.key
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+
+# Next.js build
+uora/leaderboard/.next/
