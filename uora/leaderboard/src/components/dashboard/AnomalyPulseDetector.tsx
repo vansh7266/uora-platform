@@ -47,33 +47,24 @@ export function AnomalyPulseDetector() {
 
     return {
       backgroundColor: "transparent",
-      polar: {
-        radius: ["10%", "85%"],
-      },
-      angleAxis: {
-        type: "value",
-        min: 0,
-        max: 360,
-        startAngle: 90,
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { show: false },
-        splitLine: { show: false },
-      },
-      radiusAxis: {
-        type: "value",
-        min: 0,
-        max: 1,
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { show: false },
-        splitLine: {
-          lineStyle: {
-            color: "#1E293B",
-            type: "dashed",
-          },
+      radar: {
+        indicator: ANOMALY_TYPES.map((at) => ({
+          name: at.label,
+          max: 1,
+        })),
+        shape: "polygon",
+        center: ["50%", "50%"],
+        radius: "65%",
+        axisName: {
+          color: "#64748B",
+          fontSize: 9,
+          fontFamily: "JetBrains Mono, monospace",
         },
-        splitNumber: 4,
+        splitArea: { show: false },
+        splitLine: {
+          lineStyle: { color: "#1E293B", type: "dashed" },
+        },
+        axisLine: { lineStyle: { color: "#1E293B" } },
       },
       series: [
         // Outer pulsing ring
@@ -136,8 +127,6 @@ export function AnomalyPulseDetector() {
         // Radar sectors for anomaly types
         {
           type: "radar",
-          center: ["50%", "50%"],
-          radius: "65%",
           data: [
             {
               value: ANOMALY_TYPES.map((at) => {
@@ -166,23 +155,6 @@ export function AnomalyPulseDetector() {
               symbolSize: 4,
             },
           ],
-          radar: {
-            indicator: ANOMALY_TYPES.map((at) => ({
-              name: at.label,
-              max: 1,
-            })),
-            shape: "polygon",
-            axisName: {
-              color: "#64748B",
-              fontSize: 9,
-              fontFamily: "JetBrains Mono, monospace",
-            },
-            splitArea: { show: false },
-            splitLine: {
-              lineStyle: { color: "#1E293B", type: "dashed" },
-            },
-            axisLine: { lineStyle: { color: "#1E293B" } },
-          },
         },
       ],
     };

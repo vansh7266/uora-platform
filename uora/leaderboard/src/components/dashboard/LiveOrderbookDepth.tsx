@@ -213,6 +213,26 @@ export function LiveOrderbookDepth() {
             type: "dashed",
           },
           animationDuration: 400,
+          markLine: {
+            silent: true,
+            symbol: "none",
+            data: [
+              {
+                xAxis: bidLevels.length - 0.5,
+                lineStyle: {
+                  color: "#F59E0B",
+                  type: "solid",
+                  width: 2,
+                },
+                label: {
+                  formatter: "Spread",
+                  color: "#F59E0B",
+                  fontSize: 10,
+                  fontFamily: "JetBrains Mono, monospace",
+                },
+              },
+            ],
+          },
         },
         {
           name: "Ask Depth",
@@ -229,26 +249,6 @@ export function LiveOrderbookDepth() {
           animationDuration: 400,
         },
       ],
-      markLine: {
-        silent: true,
-        symbol: "none",
-        data: [
-          {
-            xAxis: bidLevels.length - 0.5,
-            lineStyle: {
-              color: "#F59E0B",
-              type: "solid",
-              width: 2,
-            },
-            label: {
-              formatter: "Spread",
-              color: "#F59E0B",
-              fontSize: 10,
-              fontFamily: "JetBrains Mono, monospace",
-            },
-          },
-        ],
-      },
       animation: true,
       animationDuration: 500,
     };

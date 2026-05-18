@@ -2,6 +2,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import "echarts-liquidfill";
 import { motion } from "framer-motion";
 import { Trophy, Sparkles } from "lucide-react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
