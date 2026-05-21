@@ -20,13 +20,16 @@ Gracefully shuts down on SIGINT / SIGTERM.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
 import signal
 import string
+import subprocess
 import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, Optional
@@ -107,13 +110,15 @@ def require_setting(name: str, value: str | None) -> str:
 DOCKERFILE_CPP: Final = """\
 FROM gcc:13-bookworm AS builder
 WORKDIR /src
+RUN mkdir -p /app
 COPY . .
-RUN g++ -O2 -static -std=c++20 -o /app/engine *.cpp *.cc *.cxx 2>/dev/null || \\
-    g++ -O2 -static -std=c++17 -o /app/engine *.cpp *.cc *.cxx 2>/dev/null || \\
-    g++ -O2 -static -o /app/engine *.cpp *.cc *.cxx
+RUN g++ -O2 -static -std=c++20 -o /app/engine $(ls *.cpp *.cc *.cxx 2>/dev/null | head -20) 2>/dev/null || \\
+    g++ -O2 -static -std=c++17 -o /app/engine $(ls *.cpp *.cc *.cxx 2>/dev/null | head -20) 2>/dev/null || \\
+    g++ -O2 -static -o /app/engine $(ls *.cpp *.cc *.cxx 2>/dev/null | head -20)
 
 FROM scratch
 COPY --from=builder /app/engine /engine
+EXPOSE 8080
 ENTRYPOINT ["/engine"]
 """
 
@@ -133,11 +138,13 @@ ENTRYPOINT ["/engine"]
 DOCKERFILE_GO: Final = """\
 FROM golang:1.22-bookworm AS builder
 WORKDIR /src
+RUN mkdir -p /app
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /app/engine .
 
 FROM scratch
 COPY --from=builder /app/engine /engine
+EXPOSE 8080
 ENTRYPOINT ["/engine"]
 """
 
@@ -250,6 +257,38 @@ class SandboxBuilder:
         self._s3_session: Optional[Any] = None
         self._running: bool = False
         self._shutting_down: bool = False
+        # Thread pool for subprocess calls — avoids uvloop child watcher issues on Python 3.11
+        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uora-cmd")
+
+    # ── Subprocess helper ────────────────────────────────────────────────
+
+    async def _run_cmd(
+        self,
+        *cmd: str,
+        input_bytes: Optional[bytes] = None,
+        timeout: float = 120.0,
+    ) -> tuple[int, bytes, bytes]:
+        """Run an external command in a thread executor.
+
+        Returns (returncode, stdout, stderr).
+        Bypasses asyncio child watcher entirely — compatible with uvloop on Python 3.11+.
+        """
+        loop = asyncio.get_event_loop()
+
+        def _blocking() -> tuple[int, bytes, bytes]:
+            result = subprocess.run(
+                list(cmd),
+                input=input_bytes,
+                capture_output=True,
+                timeout=timeout,
+            )
+            return result.returncode, result.stdout, result.stderr
+
+        try:
+            return await loop.run_in_executor(self._executor, _blocking)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Command timed out after {timeout}s: {' '.join(cmd)}")
+
 
     # ── Lifecycle ───────────────────────────────────────────────────────
 
@@ -470,27 +509,20 @@ class SandboxBuilder:
             return source_dir
 
         # Validate archive members to prevent path traversal
-        proc = await asyncio.create_subprocess_exec(
-            "tar", "-tzf", str(download_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
-        if proc.returncode == 0:
+        rc, stdout, _ = await self._run_cmd("tar", "-tzf", str(download_path), timeout=30.0)
+        if rc == 0:
             for member in stdout.decode().splitlines():
                 if member.startswith("/") or ".." in member:
                     raise RuntimeError("Path traversal attempt detected in archive")
 
         # Extract archive uploads securely
-        proc = await asyncio.create_subprocess_exec(
+        rc, _, stderr = await self._run_cmd(
             "tar", "-xzf", str(download_path), "-C", str(source_dir),
             "--no-same-owner", "--no-same-permissions",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            timeout=60.0,
         )
-        _, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"tar extraction failed (rc={proc.returncode}): {stderr.decode().strip()}")
+        if rc != 0:
+            raise RuntimeError(f"tar extraction failed (rc={rc}): {stderr.decode().strip()}")
 
         logger.info("Extracted source to %s", source_dir)
         return source_dir
@@ -538,22 +570,12 @@ class SandboxBuilder:
         ]
         logger.info("Building and pushing image %s (lang=%s)", image_tag, language)
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=BUILD_TIMEOUT)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            raise RuntimeError(f"Docker build timed out after {BUILD_TIMEOUT}s")
+        rc, _, stderr = await self._run_cmd(*cmd, timeout=float(BUILD_TIMEOUT))
 
-        if proc.returncode != 0:
+        if rc != 0:
             build_log = stderr.decode(errors="replace")[-4096:]  # last 4 KB
             raise RuntimeError(
-                f"BuildKit build failed (rc={proc.returncode}):\n{build_log}"
+                f"BuildKit build failed (rc={rc}):\n{build_log}"
             )
 
         logger.info("Built and pushed image %s successfully", image_tag)
@@ -588,21 +610,16 @@ class SandboxBuilder:
 
         logger.info("Deploying Pod %s (image=%s)", pod_name, image_tag)
 
-        proc = await asyncio.create_subprocess_exec(
+        rc, _, stderr = await self._run_cmd(
             "kubectl", "apply", "-f", "-",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=manifest.encode()),
-            timeout=30,
+            input_bytes=manifest.encode(),
+            timeout=30.0,
         )
 
-        if proc.returncode != 0:
+        if rc != 0:
             apply_log = stderr.decode(errors="replace")[-4096:]
             raise RuntimeError(
-                f"kubectl apply failed (rc={proc.returncode}):\n{apply_log}"
+                f"kubectl apply failed (rc={rc}):\n{apply_log}"
             )
 
         logger.info("Deployed Pod and Service %s", pod_name)
