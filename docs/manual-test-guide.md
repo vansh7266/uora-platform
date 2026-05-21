@@ -9,6 +9,7 @@ changes. The commands assume the repository is checked out at
 ```bash
 cd /Users/vanshgupta/Desktop/uora
 cp .env.example .env
+$EDITOR .env
 docker compose up -d
 cd uora/leaderboard
 npm run build
@@ -39,20 +40,11 @@ Expected:
 
 - The user badge shows local initials, not a broken remote avatar.
 - A real signup does not create fake leaderboard rows.
-- Leaderboard rows appear only when a real benchmark produces scores or when the mock publisher is deliberately running.
+- Leaderboard rows appear only when a real benchmark produces scores.
 
 ## 3. Check Live Leaderboard Stream
 
-For prototype/demo data only:
-
-```bash
-cd /Users/vanshgupta/Desktop/uora
-PYTHONPATH=/private/tmp/uora_runtime_deps \
-REDIS_URL=redis://:uora12345@localhost:6379/0 \
-python3 uora/leaderboard/mock_publisher.py
-```
-
-In another terminal:
+After a benchmark has completed, stream leaderboard events:
 
 ```bash
 curl -N --max-time 8 http://localhost:3000/api/leaderboard
@@ -60,11 +52,8 @@ curl -N --max-time 8 http://localhost:3000/api/leaderboard
 
 Expected:
 
-- The stream contains typed `metrics` events.
 - The stream contains typed `leaderboard` events.
-- Each leaderboard entry has `p50_latency_ms`, `p99_latency_ms`, `throughput`, `correctness_rate`, and `status`.
-
-Stop the mock publisher when testing real data. It is only a demo data source.
+- Each leaderboard entry has `p50_latency_ms`, `p90_latency_ms`, `p99_latency_ms`, `throughput_rps`, `success_rate`, `correctness_rate`, `anomaly_score`, and `status`.
 
 ## 4. Submit A Dummy Engine
 
@@ -154,7 +143,5 @@ Expected:
 cd /Users/vanshgupta/Desktop/uora
 docker compose stop
 pkill -f "next start"
-pkill -f "mock_publisher.py"
 pkill -f "reference_server.py"
 ```
-
