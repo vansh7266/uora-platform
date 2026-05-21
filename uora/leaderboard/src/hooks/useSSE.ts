@@ -14,6 +14,7 @@ export function useSSE(url: string = "/api/leaderboard") {
     setEntries,
     addMetrics,
     addAnomaly,
+    updateSubmissionStatus,
     setConnected,
     setError,
   } = useLeaderboardStore();
@@ -61,8 +62,14 @@ export function useSSE(url: string = "/api/leaderboard") {
               prevRank: e.prevRank ?? e.rank,
               language: e.language ?? "cpp",
               anomaly_score: e.anomaly_score ?? 0,
+              p50_latency_ms: e.p50_latency_ms ?? 0,
+              p90_latency_ms: e.p90_latency_ms ?? 0,
             }))
           );
+        } else if (data.type === "submission_status") {
+          updateSubmissionStatus(data.submission_id, data.status, data.error);
+        } else if (data.type === "benchmark_complete") {
+          updateSubmissionStatus(data.submission_id, "scored");
         } else if (data.type === "metrics") {
           addMetrics({
             timestamp: data.timestamp,
@@ -93,7 +100,7 @@ export function useSSE(url: string = "/api/leaderboard") {
         console.error("Failed to parse SSE data");
       }
     };
-  }, [url, setEntries, addMetrics, addAnomaly, setConnected, setError]);
+  }, [url, setEntries, addMetrics, addAnomaly, updateSubmissionStatus, setConnected, setError]);
 
   useEffect(() => {
     connectRef.current = connect;

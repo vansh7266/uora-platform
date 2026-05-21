@@ -37,6 +37,12 @@ ENVOY_LOG_PATTERN = re.compile(
 )
 
 
+def require_setting(name: str, value: str | None) -> str:
+    if not value:
+        raise RuntimeError(f"{name} must be set in the environment")
+    return value
+
+
 class TelemetryIngester:
     """
     Tails Envoy access log file and batches inserts into TimescaleDB.
@@ -47,7 +53,7 @@ class TelemetryIngester:
         db_host: str = "localhost",
         db_port: int = 5432,
         db_user: str = "uora",
-        db_password: str = "uora12345",
+        db_password: str | None = None,
         db_name: str = "uora_metrics",
         batch_size: int = 100,
         flush_interval_ms: float = 1000.0,
@@ -76,7 +82,7 @@ class TelemetryIngester:
             host=self.db_host,
             port=self.db_port,
             user=self.db_user,
-            password=self.db_password,
+            password=require_setting("DB_PASSWORD", self.db_password),
             database=self.db_name,
             min_size=2,
             max_size=10,
@@ -248,7 +254,7 @@ async def main():
         db_host=os.getenv("DB_HOST", "localhost"),
         db_port=int(os.getenv("DB_PORT", 5432)),
         db_user=os.getenv("DB_USER", "uora"),
-        db_password=os.getenv("DB_PASSWORD", "uora12345"),
+        db_password=os.getenv("DB_PASSWORD"),
         db_name=os.getenv("DB_NAME", "uora_metrics"),
     )
 

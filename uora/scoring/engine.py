@@ -17,11 +17,6 @@ try:
 except ImportError:  # pragma: no cover - exercised in minimal local envs
     asyncpg = None
 
-try:
-    import polars as pl
-except ImportError:  # pragma: no cover - exercised in minimal local envs
-    pl = None
-
 from uora.telemetry.migrations import ensure_timescale_schema
 
 logger = logging.getLogger("uora.scoring")
@@ -32,16 +27,67 @@ logger = logging.getLogger("uora.scoring")
 _pool: Optional[Any] = None
 
 
+def require_setting(name: str, value: str | None) -> str:
+    if not value:
+        raise RuntimeError(f"{name} must be set in the environment")
+    return value
+
+
 def _p99_to_p50_ratio(p99_latency: float, p50_latency: float | None) -> float:
     """Return the tail-latency ratio for values already expressed in ns."""
     return (p99_latency / p50_latency) if p50_latency and p50_latency > 0 else 1.0
+
+
+def _nearest_rank_percentile(sorted_values: list[int], percentile: float) -> int:
+    if not sorted_values:
+        return 0
+    rank = int(np.ceil(len(sorted_values) * percentile))
+    return sorted_values[min(max(rank, 1) - 1, len(sorted_values) - 1)]
+
+
+def compute_latency_summary(
+    rows: list[Any],
+    *,
+    duration_seconds: float | None = None,
+) -> dict[str, float | int]:
+    """Compute latency and reliability metrics from raw telemetry rows."""
+    def _value(row: Any, key: str, default: Any = None) -> Any:
+        if isinstance(row, dict):
+            return row.get(key, default)
+        try:
+            value = row[key]
+        except (KeyError, TypeError):
+            return default
+        return default if value is None else value
+
+    latencies = sorted(int(_value(row, "latency_ns")) for row in rows if _value(row, "latency_ns") is not None)
+    total = len(rows)
+    successes = sum(1 for row in rows if bool(_value(row, "success", True)))
+    failures = total - successes
+
+    if duration_seconds is None:
+        duration_seconds = 1.0
+    duration_seconds = max(float(duration_seconds or 0.0), 1.0)
+
+    return {
+        "total_orders": total,
+        "successful_orders": successes,
+        "failed_orders": failures,
+        "throughput": total / duration_seconds,
+        "max_tps": total / duration_seconds,
+        "success_rate": successes / max(total, 1),
+        "error_rate": failures / max(total, 1),
+        "p50_latency_ns": _nearest_rank_percentile(latencies, 0.50),
+        "p90_latency_ns": _nearest_rank_percentile(latencies, 0.90),
+        "p99_latency_ns": _nearest_rank_percentile(latencies, 0.99),
+    }
 
 
 async def startup(
     db_host: str = "localhost",
     db_port: int = 5432,
     db_user: str = "uora",
-    db_password: str = "uora12345",
+    db_password: str | None = None,
     db_name: str = "uora_metrics",
 ) -> None:
     """Create the global connection pool. Call once at app start."""
@@ -53,7 +99,7 @@ async def startup(
         host=db_host,
         port=db_port,
         user=db_user,
-        password=db_password,
+        password=require_setting("TIMESCALE_PASSWORD", db_password),
         database=db_name,
         min_size=2,
         max_size=20,
@@ -80,7 +126,7 @@ class ScoringEngine:
         db_host: str = "localhost",
         db_port: int = 5432,
         db_user: str = "uora",
-        db_password: str = "uora12345",
+        db_password: str | None = None,
         db_name: str = "uora_metrics",
     ):
         self._db_config = {
@@ -101,66 +147,57 @@ class ScoringEngine:
         Returns: score dict with all metrics.
         """
         await self._ensure_pool()
-        if pl is None:
-            raise RuntimeError("polars is required for scoring computation. Install project dependencies first.")
 
         async with _pool.acquire() as conn:
-            # Fetch 1-minute aggregates from continuous view
-            rows = await conn.fetch(
+            latency_rows = await conn.fetch(
                 """
-                SELECT bucket, throughput
-                FROM latency_1min
+                SELECT time, latency_ns, status_code, success
+                FROM latency_events
                 WHERE submission_id = $1
-                ORDER BY bucket DESC
-                LIMIT 60
+                ORDER BY time ASC
                 """,
                 submission_id,
             )
 
-            if not rows:
+            if not latency_rows:
                 return {
                     "submission_id": submission_id,
                     "error": "No telemetry data found",
                     "composite_score": 0.0,
                 }
 
-            # Compute true p50, p90, p99 from raw latency events
-            stats_row = await conn.fetchrow(
+            duration_row = await conn.fetchrow(
                 """
-                SELECT 
-                    percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ns) AS p50_latency_ns,
-                    percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ns) AS p90_latency_ns,
-                    percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ns) AS p99_latency_ns
+                SELECT GREATEST(
+                    EXTRACT(EPOCH FROM (MAX(time) - MIN(time))),
+                    1.0
+                ) AS duration_seconds
                 FROM latency_events
                 WHERE submission_id = $1
                 """,
                 submission_id,
             )
-            p50_latency = stats_row["p50_latency_ns"] if stats_row and stats_row["p50_latency_ns"] is not None else 0
-            p90_latency = stats_row["p90_latency_ns"] if stats_row and stats_row["p90_latency_ns"] is not None else 0
-            p99_latency = stats_row["p99_latency_ns"] if stats_row and stats_row["p99_latency_ns"] is not None else 0
-
-            # Convert to Polars DataFrame for fast computation
-            df = pl.DataFrame(
-                {
-                    "bucket": [r["bucket"] for r in rows],
-                    "throughput": [r["throughput"] for r in rows],
-                }
+            duration_seconds = (
+                float(duration_row["duration_seconds"])
+                if duration_row and duration_row["duration_seconds"] is not None
+                else 1.0
             )
-
-            # Compute metrics
-            avg_throughput = df["throughput"].mean() if len(df) > 0 else 0
-            max_throughput = df["throughput"].max() if len(df) > 0 else 0
+            summary = compute_latency_summary(latency_rows, duration_seconds=duration_seconds)
+            p50_latency = int(summary["p50_latency_ns"])
+            p90_latency = int(summary["p90_latency_ns"])
+            p99_latency = int(summary["p99_latency_ns"])
+            avg_throughput = float(summary["throughput"])
+            max_throughput = float(summary["max_tps"])
             
             # Fetch correctness rate from validator results
             correctness_rate = await self._get_correctness_rate(conn, submission_id)
 
-            # Resource usage (mock — will be populated by sandbox metrics)
-            resource_penalty = 1.0  # Placeholder
+            # Default runtime cost until cgroup/container metrics are attached.
+            resource_penalty = 1.0
 
             # Composite score
             # Higher = better. Penalizes high latency and resource usage.
-            numerator = avg_throughput * correctness_rate
+            numerator = avg_throughput * correctness_rate * float(summary["success_rate"])
             denominator = (p99_latency / 1_000_000) + (resource_penalty ** 2)  # Convert ns to ms
 
             composite_score = numerator / max(denominator, 1.0)
@@ -176,15 +213,8 @@ class ScoringEngine:
                 detector.fit()
 
                 # Fetch raw latencies for feature extraction
-                latency_rows = await conn.fetch(
-                    """
-                    SELECT latency_ns FROM latency_events
-                    WHERE submission_id = $1
-                    ORDER BY time DESC LIMIT 10000
-                    """,
-                    submission_id,
-                )
                 raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
+                throughput_values = [float(summary["throughput"])]
 
                 features = BenchmarkFeatures(
                     submission_id=submission_id,
@@ -193,8 +223,8 @@ class ScoringEngine:
                     volume_conservation_delta=0.0,
                     state_transition_ged=0.0,
                     latency_trend_slope=0.0,
-                    throughput_variance=0.0,
-                    error_rate=0.0,
+                    throughput_variance=float(np.var(np.array(throughput_values, dtype=np.float64))),
+                    error_rate=float(summary["error_rate"]),
                     p99_to_p50_ratio=_p99_to_p50_ratio(p99_latency, p50_latency),
                 )
                 result = detector.detect(features)
@@ -214,7 +244,7 @@ class ScoringEngine:
                 "composite_score": round(composite_score, 4),
                 "throughput": {
                     "avg": round(avg_throughput, 2),
-                    "max": int(max_throughput),
+                    "max": round(max_throughput, 2),
                     "unit": "orders/sec",
                 },
                 "latency": {
@@ -225,6 +255,11 @@ class ScoringEngine:
                 "correctness": {
                     "rate": round(correctness_rate, 4),
                     "percentage": f"{correctness_rate * 100:.2f}%",
+                },
+                "reliability": {
+                    "success_rate": round(float(summary["success_rate"]), 4),
+                    "error_rate": round(float(summary["error_rate"]), 4),
+                    "total_orders": int(summary["total_orders"]),
                 },
                 "anomaly": {
                     "score": round(anomaly_score, 4),
@@ -240,17 +275,25 @@ class ScoringEngine:
                 """
                 INSERT INTO benchmark_scores (
                     time, submission_id, throughput, correctness_rate,
-                    p99_latency_ns, resource_penalty, composite_score, anomaly_score
+                    p50_latency_ns, p90_latency_ns, p99_latency_ns,
+                    success_rate, error_rate, max_tps,
+                    resource_penalty, composite_score, anomaly_score, status
                 )
-                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 """,
                 submission_id,
                 float(avg_throughput or 0),
                 float(correctness_rate or 0),
+                int(p50_latency or 0),
+                int(p90_latency or 0),
                 int(p99_latency or 0),
+                float(summary["success_rate"]),
+                float(summary["error_rate"]),
+                float(max_throughput or 0),
                 float(resource_penalty),
                 float(composite_score or 0),
                 float(anomaly_score or 0),
+                "scored",
             )
             
             # Generate PDF Report
@@ -291,7 +334,23 @@ class ScoringEngine:
             return score_payload
 
     async def _get_correctness_rate(self, conn: asyncpg.Connection, submission_id: str) -> float:
-        """Fetch correctness rate from benchmark_scores table."""
+        """Fetch latest validator correctness rate; absence is not treated as perfect."""
+        try:
+            row = await conn.fetchrow(
+                """
+                SELECT correctness_rate
+                FROM validation_results
+                WHERE submission_id = $1
+                ORDER BY time DESC
+                LIMIT 1
+                """,
+                submission_id,
+            )
+            if row:
+                return float(row["correctness_rate"] or 0.0)
+        except Exception as exc:
+            logger.warning("Validation lookup failed for %s: %s", submission_id, exc)
+
         row = await conn.fetchrow(
             """
             SELECT correctness_rate
@@ -302,7 +361,7 @@ class ScoringEngine:
             """,
             submission_id,
         )
-        return row["correctness_rate"] if row else 1.0  # Default to perfect if not scored yet
+        return float(row["correctness_rate"] or 0.0) if row else 0.0
 
     async def get_leaderboard(self, limit: int = 20) -> list[dict]:
         """Fetch top submissions by composite score."""
@@ -311,9 +370,17 @@ class ScoringEngine:
         async with _pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT submission_id, composite_score, throughput, p99_latency_ns, correctness_rate
-                FROM benchmark_scores
-                ORDER BY composite_score DESC
+                WITH latest_scores AS (
+                    SELECT *,
+                           ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) AS rn
+                    FROM benchmark_scores
+                )
+                SELECT submission_id, team, language, status, composite_score, throughput,
+                       p50_latency_ns, p90_latency_ns, p99_latency_ns,
+                       correctness_rate, anomaly_score, success_rate, error_rate, max_tps
+                FROM latest_scores
+                WHERE rn = 1
+                ORDER BY composite_score DESC NULLS LAST
                 LIMIT $1
                 """,
                 limit,
@@ -323,13 +390,19 @@ class ScoringEngine:
                 {
                     "rank": i + 1,
                     "submission_id": str(r["submission_id"]),
-                    "team": f"Team {str(r['submission_id'])[:8]}",
+                    "team": r["team"] or f"Team {str(r['submission_id'])[:8]}",
+                    "language": r["language"] or "cpp",
                     "composite_score": round(r["composite_score"], 4),
                     "throughput": r["throughput"],
-                    "p50_latency_ms": round((r["p99_latency_ns"] / 1_000_000) * 0.4, 3),
+                    "p50_latency_ms": round((r["p50_latency_ns"] or 0) / 1_000_000, 3),
+                    "p90_latency_ms": round((r["p90_latency_ns"] or 0) / 1_000_000, 3),
                     "p99_latency_ms": round(r["p99_latency_ns"] / 1_000_000, 3),
                     "correctness_rate": round(r["correctness_rate"], 4),
-                    "status": "completed",
+                    "success_rate": round(float(r["success_rate"] or 0), 4),
+                    "error_rate": round(float(r["error_rate"] or 0), 4),
+                    "max_tps": round(float(r["max_tps"] or r["throughput"] or 0), 2),
+                    "anomaly_score": round(float(r["anomaly_score"] or 0), 4),
+                    "status": r["status"] or "scored",
                 }
                 for i, r in enumerate(rows)
             ]
@@ -341,7 +414,7 @@ def test_p99_to_p50_ratio_uses_matching_nanosecond_units():
     assert _p99_to_p50_ratio(3_000_000, 1_000_000) == 3.0
 
 async def test_scoring():
-    """Test scoring engine with mock data."""
+    """Validate scoring engine structure without requiring a live database."""
     engine = ScoringEngine()
 
     # This will fail without DB, but shows the structure

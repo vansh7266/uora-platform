@@ -10,9 +10,9 @@ interface UoraLogoProps {
 }
 
 const sizeMap = {
-  sm: { box: "h-13 w-13", text: "text-2xl", sub: "text-[9px]" },
-  md: { box: "h-16 w-16", text: "text-3xl", sub: "text-[10px]" },
-  lg: { box: "h-24 w-24", text: "text-5xl", sub: "text-[12px]" },
+  sm: { box: "h-10 w-10", text: "text-xl", sub: "text-[8px]" },
+  md: { box: "h-12 w-12", text: "text-2xl", sub: "text-[9px]" },
+  lg: { box: "h-16 w-16", text: "text-4xl", sub: "text-[10px]" },
 };
 
 export function UoraLogo({ size = "md", showWordmark = true, className }: UoraLogoProps) {

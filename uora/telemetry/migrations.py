@@ -89,8 +89,16 @@ async def ensure_timescale_schema(conn: Any) -> None:
         CREATE TABLE IF NOT EXISTS benchmark_scores (
             time             TIMESTAMPTZ NOT NULL,
             submission_id    TEXT NOT NULL,
+            team             TEXT,
+            language         TEXT,
+            status           TEXT,
             throughput       FLOAT,
+            max_tps          FLOAT,
+            success_rate     FLOAT,
+            error_rate       FLOAT,
             correctness_rate FLOAT,
+            p50_latency_ns   BIGINT,
+            p90_latency_ns   BIGINT,
             p99_latency_ns   BIGINT,
             resource_penalty FLOAT,
             composite_score  FLOAT,
@@ -99,12 +107,36 @@ async def ensure_timescale_schema(conn: Any) -> None:
         """
     )
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS submission_id TEXT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS team TEXT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS language TEXT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS status TEXT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS throughput FLOAT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS max_tps FLOAT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS success_rate FLOAT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS error_rate FLOAT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS correctness_rate FLOAT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS p50_latency_ns BIGINT")
+    await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS p90_latency_ns BIGINT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS p99_latency_ns BIGINT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS resource_penalty FLOAT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS composite_score FLOAT")
     await conn.execute("ALTER TABLE benchmark_scores ADD COLUMN IF NOT EXISTS anomaly_score FLOAT")
+
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS validation_results (
+            time             TIMESTAMPTZ NOT NULL,
+            submission_id    TEXT NOT NULL,
+            correctness_rate FLOAT NOT NULL,
+            total_actions    INT,
+            violations_count INT
+        )
+        """
+    )
+    await conn.execute("ALTER TABLE validation_results ADD COLUMN IF NOT EXISTS submission_id TEXT")
+    await conn.execute("ALTER TABLE validation_results ADD COLUMN IF NOT EXISTS correctness_rate FLOAT")
+    await conn.execute("ALTER TABLE validation_results ADD COLUMN IF NOT EXISTS total_actions INT")
+    await conn.execute("ALTER TABLE validation_results ADD COLUMN IF NOT EXISTS violations_count INT")
 
     await conn.execute(
         """
@@ -125,7 +157,7 @@ async def ensure_timescale_schema(conn: Any) -> None:
         await conn.execute("DROP MATERIALIZED VIEW IF EXISTS latency_1min CASCADE")
         logger.info("Dropped latency_1min to migrate latency_events.submission_id to text")
 
-    for table_name in ("latency_events", "correctness_violations", "benchmark_scores", "build_events"):
+    for table_name in ("latency_events", "correctness_violations", "benchmark_scores", "validation_results", "build_events"):
         await _ensure_submission_id_text(conn, table_name)
 
     await conn.execute(
@@ -156,6 +188,9 @@ async def ensure_timescale_schema(conn: Any) -> None:
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_latency_submission_id ON latency_events (submission_id, time DESC)")
     await conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_violations_submission_id ON correctness_violations (submission_id, time DESC)"
+    )
+    await conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_validation_submission_id ON validation_results (submission_id, time DESC)"
     )
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_scores_submission_id ON benchmark_scores (submission_id, time DESC)")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_build_events_submission_id ON build_events (submission_id, time DESC)")

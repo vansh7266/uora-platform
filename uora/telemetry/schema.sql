@@ -34,15 +34,32 @@ CREATE TABLE IF NOT EXISTS correctness_violations (
 CREATE TABLE IF NOT EXISTS benchmark_scores (
     time             TIMESTAMPTZ NOT NULL,
     submission_id    TEXT NOT NULL,
+    team             TEXT,
+    language         TEXT,
+    status           TEXT,
     throughput       FLOAT,
+    max_tps          FLOAT,
+    success_rate     FLOAT,
+    error_rate       FLOAT,
     correctness_rate FLOAT,
+    p50_latency_ns   BIGINT,
+    p90_latency_ns   BIGINT,
     p99_latency_ns   BIGINT,
     resource_penalty FLOAT,
     composite_score  FLOAT,
     anomaly_score    FLOAT
 );
 
--- 4. Build Events (submission build/deploy audit trail)
+-- 4. Validation Results (latest correctness summary per benchmark run)
+CREATE TABLE IF NOT EXISTS validation_results (
+    time             TIMESTAMPTZ NOT NULL,
+    submission_id    TEXT NOT NULL,
+    correctness_rate FLOAT NOT NULL,
+    total_actions    INT,
+    violations_count INT
+);
+
+-- 5. Build Events (submission build/deploy audit trail)
 CREATE TABLE IF NOT EXISTS build_events (
     time             TIMESTAMPTZ NOT NULL,
     submission_id    TEXT NOT NULL,
@@ -50,7 +67,7 @@ CREATE TABLE IF NOT EXISTS build_events (
     detail           TEXT
 );
 
--- 5. Materialized View: 1-Minute Aggregates (Continuous)
+-- 6. Materialized View: 1-Minute Aggregates (Continuous)
 CREATE MATERIALIZED VIEW IF NOT EXISTS latency_1min
 WITH (timescaledb.continuous) AS
 SELECT
@@ -61,13 +78,14 @@ SELECT
 FROM latency_events
 GROUP BY bucket, submission_id;
 
--- 6. Indexes for fast retrieval by submission
+-- 7. Indexes for fast retrieval by submission
 CREATE INDEX IF NOT EXISTS idx_latency_submission_id ON latency_events (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_violations_submission_id ON correctness_violations (submission_id, time DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_submission_id ON validation_results (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_scores_submission_id ON benchmark_scores (submission_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_build_events_submission_id ON build_events (submission_id, time DESC);
 
--- 7. Continuous Aggregate Refresh Policy
+-- 8. Continuous Aggregate Refresh Policy
 SELECT add_continuous_aggregate_policy(
     'latency_1min',
     start_offset => INTERVAL '1 hour',

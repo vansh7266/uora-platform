@@ -20,6 +20,7 @@ Gracefully shuts down on SIGINT / SIGTERM.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -30,9 +31,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, Optional
 
-import aioboto3
-import asyncpg
-import redis.asyncio as aioredis
+try:
+    import redis.asyncio as aioredis
+except ImportError:  # pragma: no cover - minimal local test environments
+    class _RedisFallback:
+        class ResponseError(Exception):
+            pass
+
+        class ConnectionError(Exception):
+            pass
+
+        Redis = None
+
+    aioredis = _RedisFallback()
+
+try:
+    import aioboto3
+except ImportError:  # pragma: no cover - minimal local test environments
+    aioboto3 = None
+
+try:
+    import asyncpg
+except ImportError:  # pragma: no cover - minimal local test environments
+    asyncpg = None
 
 # ─── Logging ────────────────────────────────────────────────────────────────
 
@@ -47,11 +68,11 @@ logger = logging.getLogger("uora.sandbox.builder")
 
 REDIS_HOST: Final = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT: Final = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_PASSWORD: Final[str | None] = os.getenv("REDIS_PASSWORD", "uora12345") or None
+REDIS_PASSWORD: Final[str | None] = os.getenv("REDIS_PASSWORD") or None
 
 MINIO_ENDPOINT: Final = os.getenv("MINIO_ENDPOINT", "minio:9000")
-MINIO_ACCESS_KEY: Final = os.getenv("MINIO_ACCESS_KEY", "uora")
-MINIO_SECRET_KEY: Final = os.getenv("MINIO_SECRET_KEY", "uora12345")
+MINIO_ACCESS_KEY: Final[str | None] = os.getenv("MINIO_ACCESS_KEY") or None
+MINIO_SECRET_KEY: Final[str | None] = os.getenv("MINIO_SECRET_KEY") or None
 MINIO_BUCKET: Final = os.getenv("MINIO_BUCKET", "uora-submissions")
 MINIO_SECURE: Final = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
@@ -62,17 +83,24 @@ BUILD_NETWORK: Final = os.getenv("BUILD_NETWORK", "none")
 DB_HOST: Final = os.getenv("TIMESCALE_HOST", os.getenv("DB_HOST", "localhost"))
 DB_PORT: Final = int(os.getenv("TIMESCALE_PORT", os.getenv("DB_PORT", "5432")))
 DB_USER: Final = os.getenv("TIMESCALE_USER", os.getenv("DB_USER", "uora"))
-DB_PASSWORD: Final = os.getenv("TIMESCALE_PASSWORD", os.getenv("DB_PASSWORD", "uora12345"))
+DB_PASSWORD: Final[str | None] = os.getenv("TIMESCALE_PASSWORD", os.getenv("DB_PASSWORD")) or None
 DB_NAME: Final = os.getenv("TIMESCALE_DB", os.getenv("DB_NAME", "uora_metrics"))
 
 K8S_NAMESPACE: Final = os.getenv("K8S_NAMESPACE", "uora")
 
 CONSUMER_GROUP: Final = "builders"
 STREAM_NAME: Final = "build_queue"
+BENCHMARK_STREAM_NAME: Final = "benchmark_queue"
 BLOCK_MS: Final = 5000  # milliseconds to block on XREADGROUP
 CONSUMER_ID: Final = f"builder-{uuid.uuid4().hex[:8]}"
 
 SUPPORTED_LANGUAGES: Final = frozenset({"cpp", "rust", "go"})
+
+
+def require_setting(name: str, value: str | None) -> str:
+    if not value:
+        raise RuntimeError(f"{name} must be set in the environment")
+    return value
 
 # ─── Dockerfile Templates ──────────────────────────────────────────────────
 
@@ -218,8 +246,8 @@ class SandboxBuilder:
 
     def __init__(self) -> None:
         self._redis: Optional[aioredis.Redis] = None
-        self._db_pool: Optional[asyncpg.Pool] = None
-        self._s3_session: Optional[aioboto3.Session] = None
+        self._db_pool: Optional[Any] = None
+        self._s3_session: Optional[Any] = None
         self._running: bool = False
         self._shutting_down: bool = False
 
@@ -230,10 +258,12 @@ class SandboxBuilder:
         logger.info("Starting SandboxBuilder (consumer=%s)", CONSUMER_ID)
 
         # Redis connection pool
+        if aioredis.Redis is None:
+            raise RuntimeError("redis is required for sandbox build queue access")
         self._redis = aioredis.Redis(
             host=REDIS_HOST,
             port=REDIS_PORT,
-            password=REDIS_PASSWORD,
+            password=require_setting("REDIS_PASSWORD", REDIS_PASSWORD),
             decode_responses=True,
             max_connections=10,
         )
@@ -255,6 +285,8 @@ class SandboxBuilder:
 
         # PostgreSQL / TimescaleDB pool (optional — used for recording build events)
         try:
+            if asyncpg is None:
+                raise RuntimeError("asyncpg is not installed")
             self._db_pool = await asyncpg.create_pool(
                 host=DB_HOST,
                 port=DB_PORT,
@@ -270,6 +302,10 @@ class SandboxBuilder:
             self._db_pool = None
 
         # MinIO / S3 session
+        if aioboto3 is None:
+            raise RuntimeError("aioboto3 is required for sandbox source downloads")
+        require_setting("MINIO_ACCESS_KEY", MINIO_ACCESS_KEY)
+        require_setting("MINIO_SECRET_KEY", MINIO_SECRET_KEY)
         self._s3_session = aioboto3.Session()
 
         self._running = True
@@ -327,7 +363,54 @@ class SandboxBuilder:
             fields[milestone_key] = fields["updated_at"]
 
         await self._redis.hset(f"submission:{submission_id}", mapping=fields)
+        try:
+            await self._redis.publish(
+                "uora:leaderboard:updates",
+                json.dumps({
+                    "type": "submission_status",
+                    "submission_id": submission_id,
+                    "status": status,
+                    "error": error,
+                    "updated_at": fields["updated_at"],
+                }),
+            )
+        except Exception as exc:
+            logger.debug("Status publish skipped for %s: %s", submission_id, exc)
         logger.info("Submission %s → %s", submission_id, status)
+
+    async def _enqueue_benchmark(
+        self,
+        submission_id: str,
+        target_url: str,
+        language: str,
+        protocol: str = "REST",
+    ) -> None:
+        """Queue the deployed engine for the benchmark/validation/scoring worker."""
+        assert self._redis is not None, "Redis not initialized"
+
+        payload = {
+            "submission_id": submission_id,
+            "target_url": target_url,
+            "language": language,
+            "protocol": protocol,
+        }
+        await self._redis.xadd(BENCHMARK_STREAM_NAME, payload)
+        await self._redis.hset(
+            f"submission:{submission_id}",
+            mapping={
+                "status": "benchmarking",
+                "benchmarking_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        await self._redis.publish(
+            "uora:leaderboard:updates",
+            json.dumps({
+                "type": "submission_status",
+                "submission_id": submission_id,
+                "status": "benchmarking",
+                "target_url": target_url,
+            }),
+        )
 
     async def _record_build_event(self, submission_id: str, event: str, detail: str) -> None:
         """Optionally record a build event in TimescaleDB for audit."""
@@ -363,8 +446,8 @@ class SandboxBuilder:
         async with self._s3_session.client(
             "s3",
             endpoint_url=f"{'https' if MINIO_SECURE else 'http'}://{MINIO_ENDPOINT}",
-            aws_access_key_id=MINIO_ACCESS_KEY,
-            aws_secret_access_key=MINIO_SECRET_KEY,
+            aws_access_key_id=require_setting("MINIO_ACCESS_KEY", MINIO_ACCESS_KEY),
+            aws_secret_access_key=require_setting("MINIO_SECRET_KEY", MINIO_SECRET_KEY),
             region_name="us-east-1",
         ) as s3:
             try:
@@ -579,6 +662,7 @@ class SandboxBuilder:
             )
             # Write base resource penalty to Redis so scoring engine can read it
             await self._redis.set(f"resources:{submission_id}", "1.0", ex=86400)
+            await self._enqueue_benchmark(submission_id, target_url, language)
 
         except Exception as exc:
             logger.exception("Build pipeline failed for submission %s", submission_id)

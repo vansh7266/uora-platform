@@ -10,9 +10,13 @@ export interface LeaderboardEntry {
   composite_score: number;
   p99_latency_ms: number;
   p50_latency_ms: number;
+  p90_latency_ms: number;
   throughput: number;
+  success_rate?: number;
+  error_rate?: number;
+  max_tps?: number;
   correctness_rate: number;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "scored" | "failed";
   anomaly_score: number;
   anomaly_type?: string;
 }
@@ -36,9 +40,18 @@ export interface Submission {
   id: string;
   team: string;
   language: string;
-  status: "queued" | "building" | "built" | "deployed" | "failed";
+  status:
+    | "queued"
+    | "building"
+    | "built"
+    | "deployed"
+    | "benchmarking"
+    | "validating"
+    | "scored"
+    | "failed";
   submittedAt: number;
   buildLog?: string;
+  error?: string;
 }
 
 interface LeaderboardState {
@@ -55,7 +68,7 @@ interface LeaderboardState {
   addMetrics: (metric: MetricUpdate) => void;
   addAnomaly: (anomaly: AnomalyEvent) => void;
   addSubmission: (submission: Submission) => void;
-  updateSubmissionStatus: (id: string, status: Submission["status"]) => void;
+  updateSubmissionStatus: (id: string, status: Submission["status"], error?: string) => void;
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedEntry: (entry: LeaderboardEntry | null) => void;
@@ -85,7 +98,8 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
           ...entry,
           prevRank: prev ? prev.rank : entry.rank,
           language: entry.language || "cpp",
-          p50_latency_ms: entry.p50_latency_ms ?? entry.p99_latency_ms * 0.4,
+          p50_latency_ms: entry.p50_latency_ms ?? 0,
+          p90_latency_ms: entry.p90_latency_ms ?? 0,
           anomaly_score: entry.anomaly_score ?? 0,
         };
       });
@@ -107,10 +121,10 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
       submissions: [submission, ...state.submissions],
     })),
 
-  updateSubmissionStatus: (id, status) =>
+  updateSubmissionStatus: (id, status, error) =>
     set((state) => ({
       submissions: state.submissions.map((s) =>
-        s.id === id ? { ...s, status } : s
+        s.id === id ? { ...s, status, error: error ?? s.error } : s
       ),
     })),
 

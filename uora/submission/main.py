@@ -35,12 +35,12 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Configuration ---
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "uora")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "uora12345")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "uora-submissions")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "uora12345")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 BUILD_TIMEOUT = int(os.getenv("BUILD_TIMEOUT", 60))
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 50 * 1024 * 1024))  # 50MB
 
@@ -51,14 +51,9 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/au
 
 # --- API Token Auth ---
 UORA_API_TOKEN = os.getenv("UORA_API_TOKEN", "")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "change-this-to-a-random-secret")
+SESSION_SECRET = os.getenv("SESSION_SECRET")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "86400"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in {"1", "true", "yes"}
-if (
-    os.getenv("ENVIRONMENT", "development").lower() in {"prod", "production"}
-    and SESSION_SECRET == "change-this-to-a-random-secret"
-):
-    raise RuntimeError("SESSION_SECRET must be set to a strong random value in production")
 
 # --- Rate Limiting ---
 RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", 5))        # submissions per window
@@ -67,6 +62,12 @@ RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 3600))  # seconds (1 hour
 # --- Redis Connection Pool ---
 redis_pool: Optional[redis.Redis] = None
 timescale_pool: Optional[asyncpg.Pool] = None
+
+
+def require_setting(name: str, value: Optional[str]) -> str:
+    if not value:
+        raise RuntimeError(f"{name} must be set in the environment")
+    return value
 
 
 def parse_cors_origins() -> list[str]:
@@ -89,7 +90,7 @@ def build_session_token(payload: dict[str, Any]) -> str:
         "iat": now,
         "exp": now + SESSION_TTL_SECONDS,
     }
-    return jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+    return jwt.encode(session_payload, require_setting("SESSION_SECRET", SESSION_SECRET), algorithm="HS256")
 
 
 def set_session_cookie(response: JSONResponse, token: str) -> None:
@@ -108,9 +109,15 @@ def set_session_cookie(response: JSONResponse, token: str) -> None:
 async def lifespan(app: FastAPI):
     # Startup
     global redis_pool, timescale_pool
+    require_setting("REDIS_PASSWORD", REDIS_PASSWORD)
+    require_setting("MINIO_ACCESS_KEY", MINIO_ACCESS_KEY)
+    require_setting("MINIO_SECRET_KEY", MINIO_SECRET_KEY)
+    timescale_password = require_setting("TIMESCALE_PASSWORD", os.getenv("TIMESCALE_PASSWORD"))
+    require_setting("SESSION_SECRET", SESSION_SECRET)
+
     redis_pool = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT,
-        password=REDIS_PASSWORD or None,
+        password=REDIS_PASSWORD,
         decode_responses=True,
     )
     
@@ -120,7 +127,7 @@ async def lifespan(app: FastAPI):
             host=os.getenv("TIMESCALE_HOST", "timescaledb"),
             port=int(os.getenv("TIMESCALE_PORT", "5432")),
             user=os.getenv("TIMESCALE_USER", "uora"),
-            password=os.getenv("TIMESCALE_PASSWORD", "uora12345"),
+            password=timescale_password,
             database=os.getenv("TIMESCALE_DB", "uora_metrics"),
             min_size=1,
             max_size=5,
@@ -570,6 +577,9 @@ async def get_status(submission_id: str, auth_data: dict = Depends(require_auth)
         "queued_at": data.get("queued_at"),
         "built_at": data.get("built_at"),
         "deployed_at": data.get("deployed_at"),
+        "benchmarking_at": data.get("benchmarking_at"),
+        "validating_at": data.get("validating_at"),
+        "scored_at": data.get("scored_at"),
         "error": data.get("error"),
     }
 
@@ -609,11 +619,17 @@ async def stream_leaderboard(request: Request):
             rows = await conn.fetch(
                 """
                 WITH latest_scores AS (
-                    SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate,
+                    SELECT submission_id, team, language, status, composite_score,
+                           p50_latency_ns, p90_latency_ns, p99_latency_ns,
+                           throughput, max_tps, success_rate, error_rate,
+                           correctness_rate, anomaly_score,
                            ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) as rn
                     FROM benchmark_scores
                 )
-                SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate
+                SELECT submission_id, team, language, status, composite_score,
+                       p50_latency_ns, p90_latency_ns, p99_latency_ns,
+                       throughput, max_tps, success_rate, error_rate,
+                       correctness_rate, anomaly_score
                 FROM latest_scores
                 WHERE rn = 1
                 ORDER BY composite_score DESC
@@ -630,17 +646,25 @@ async def stream_leaderboard(request: Request):
                 if sub_data and sub_data.get("team"):
                     team_name = sub_data["team"]
 
+            p50_latency_ms = float(row["p50_latency_ns"] or 0) / 1_000_000
+            p90_latency_ms = float(row["p90_latency_ns"] or 0) / 1_000_000
             p99_latency_ms = float(row["p99_latency_ns"] or 0) / 1_000_000
             entries.append({
                 "rank": rank,
                 "submission_id": submission_id,
                 "team": team_name,
+                "language": row["language"] or "cpp",
                 "composite_score": round(float(row["composite_score"] or 0), 2),
                 "throughput": round(float(row["throughput"] or 0), 0),
-                "p50_latency_ms": round(p99_latency_ms * 0.4, 2),
+                "max_tps": round(float(row["max_tps"] or row["throughput"] or 0), 2),
+                "p50_latency_ms": round(p50_latency_ms, 3),
+                "p90_latency_ms": round(p90_latency_ms, 3),
                 "p99_latency_ms": round(p99_latency_ms, 2),
                 "correctness_rate": round(float(row["correctness_rate"] or 0), 4),
-                "status": "completed",
+                "success_rate": round(float(row["success_rate"] or 0), 4),
+                "error_rate": round(float(row["error_rate"] or 0), 4),
+                "anomaly_score": round(float(row["anomaly_score"] or 0), 4),
+                "status": row["status"] or "scored",
             })
         return entries
 
