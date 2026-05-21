@@ -35,7 +35,7 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-[#223047] bg-[#070b11]/96 backdrop-blur-xl">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-uora-border bg-uora-bg/96 backdrop-blur-xl">
       <div className="mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="group min-w-0">
@@ -59,7 +59,7 @@ export function Navbar() {
                     "relative px-4 py-2 rounded-lg text-sm font-medium transition-colors",
                     isActive
                       ? "text-uora-cyan"
-                      : "text-slate-400 hover:text-slate-100 hover:bg-[#101722]"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-uora-elevated"
                   )}
                 >
                   <div className="flex items-center gap-2">
@@ -81,7 +81,7 @@ export function Navbar() {
           {/* Right Section */}
           <div className="flex items-center gap-3">
             {/* Connection Status */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#101823] border border-[#2a3a50]">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-uora-surface border border-uora-border">
               <div
                 className={cn(
                   "w-2 h-2 rounded-full",
@@ -98,7 +98,7 @@ export function Navbar() {
             {/* User Section */}
             {isAuthenticated && user ? (
               <div className="flex items-center gap-3">
-                <div className="hidden sm:flex items-center gap-2 rounded-lg border border-[#2a3a50] bg-[#101823] px-3 py-1.5">
+                <div className="hidden sm:flex items-center gap-2 rounded-lg border border-uora-border bg-uora-surface px-3 py-1.5">
                   <div className="grid h-6 w-6 place-items-center rounded-md bg-uora-cyan/12 text-[10px] font-bold text-uora-cyan ring-1 ring-uora-cyan/30">
                     {getInitials(user.name, user.email)}
                   </div>
@@ -124,7 +124,7 @@ export function Navbar() {
             {/* Mobile Menu Toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-uora-cyan/35 bg-uora-cyan/10 text-uora-cyan shadow-[0_0_18px_rgba(6,182,212,0.2)] transition-colors hover:bg-uora-cyan/20 md:hidden"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-uora-cyan/35 bg-uora-cyan/10 text-uora-cyan shadow-[0_0_18px_rgba(226,181,62,0.2)] transition-colors hover:bg-uora-cyan/20 md:hidden"
               aria-label="Open navigation"
             >
               {mobileMenuOpen ? (
