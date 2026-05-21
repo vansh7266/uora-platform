@@ -8,21 +8,21 @@ import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 /**
  * LatencyHeatmapChart — Visualizes latency distribution across submission teams
  * as a time-binned heatmap. Each row is a team, each column is a time bucket,
- * and cell intensity represents p99 latency (red = slow, cyan = fast).
+ * and cell intensity represents p99 latency.
  */
 export function LatencyHeatmapChart() {
   const { entries, metrics } = useLeaderboardStore();
 
   const option = useMemo(() => {
     // Teams for Y-axis
-    const teams = entries.slice(0, 20).map((e) => e.team || e.submission_id.slice(0, 8));
+    const teams = entries.slice(0, 10).map((e) => e.team || e.submission_id.slice(0, 8));
 
     // Time buckets for X-axis
     const timeLabels = metrics.length > 0
-      ? metrics.slice(-24).map((m) =>
+      ? metrics.slice(-16).map((m) =>
           new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         )
-      : Array.from({ length: 24 }, (_, i) => `${i}:00`);
+      : Array.from({ length: 16 }, (_, i) => `${i}:00`);
 
     const deterministicUnit = (seed: number) => {
       const value = Math.sin(seed * 12.9898) * 43758.5453;
@@ -46,17 +46,17 @@ export function LatencyHeatmapChart() {
     return {
       backgroundColor: "transparent",
       grid: {
-        top: 40,
-        right: 80,
+        top: 30,
+        right: 70,
         bottom: 50,
-        left: 100,
+        left: 90,
       },
       tooltip: {
-        backgroundColor: "#111827",
+        backgroundColor: "#0F1117",
         borderColor: "#1E293B",
         borderWidth: 1,
         textStyle: {
-          color: "#E2E8F0",
+          color: "#F8FAFC",
           fontSize: 11,
           fontFamily: "JetBrains Mono, monospace",
         },
@@ -64,10 +64,10 @@ export function LatencyHeatmapChart() {
           const [tIdx, gIdx, val] = params.value;
           const team = teams[gIdx] || "unknown";
           const time = timeLabels[tIdx] || "";
-          return `<div style="font-size:11px">
-            <div style="color:#94A3B8;margin-bottom:4px">${time}</div>
-            <div style="color:#E2E8F0"><b>${team}</b></div>
-            <div style="color:#06B6D4;font-family:JetBrains Mono,monospace;margin-top:2px">${val.toFixed(3)}ms</div>
+          return `<div style="font-size:11px;font-family:JetBrains Mono">
+            <div style="color:#64748B;margin-bottom:4px">${time}</div>
+            <div style="color:#F8FAFC;font-weight:bold"><b>${team}</b></div>
+            <div style="color:#E2B53E;font-weight:bold;margin-top:2px">${val.toFixed(3)}ms</div>
           </div>`;
         },
       },
@@ -80,7 +80,7 @@ export function LatencyHeatmapChart() {
           color: "#64748B",
           fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
-          interval: Math.max(0, Math.floor(timeLabels.length / 8) - 1),
+          interval: Math.max(0, Math.floor(timeLabels.length / 6) - 1),
           rotate: 30,
         },
         splitArea: { show: false },
@@ -91,7 +91,7 @@ export function LatencyHeatmapChart() {
         axisLine: { lineStyle: { color: "#1E293B" } },
         axisTick: { show: false },
         axisLabel: {
-          color: "#64748B",
+          color: "#94A3B8",
           fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
         },
@@ -102,17 +102,17 @@ export function LatencyHeatmapChart() {
         max: maxLatency,
         calculable: true,
         orient: "vertical",
-        right: 10,
+        right: 0,
         top: "center",
-        itemHeight: 140,
-        itemWidth: 12,
+        itemHeight: 120,
+        itemWidth: 10,
         textStyle: {
           color: "#64748B",
-          fontSize: 9,
+          fontSize: 8,
           fontFamily: "JetBrains Mono, monospace",
         },
         inRange: {
-          color: ["#06B6D4", "#22D3EE", "#FBBF24", "#F97316", "#EF4444"],
+          color: ["#10B981", "#6EE7B7", "#FBBF24", "#F97316", "#EF4444"],
         },
         text: ["Slow", "Fast"],
       },
@@ -122,12 +122,12 @@ export function LatencyHeatmapChart() {
           data: data,
           emphasis: {
             itemStyle: {
-              borderColor: "#E2E8F0",
+              borderColor: "#F8FAFC",
               borderWidth: 1,
             },
           },
           itemStyle: {
-            borderColor: "#0A0E1A",
+            borderColor: "#08090C",
             borderWidth: 2,
             borderRadius: 2,
           },
@@ -140,24 +140,33 @@ export function LatencyHeatmapChart() {
   }, [entries, metrics]);
 
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-uora-border flex items-center justify-between">
+    <div className="bg-uora-surface border border-uora-border rounded-md overflow-hidden shadow-lg">
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
         <div className="flex items-center gap-2">
-          <Flame className="w-4 h-4 text-uora-warning" />
-          <h3 className="text-sm font-semibold">Latency Heatmap</h3>
+          <Flame className="w-4 h-4 text-uora-warning animate-pulse" />
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Latency Heatmap</h3>
         </div>
-        <span className="text-[10px] font-mono text-slate-500">
-          p99 latency per team × time bucket
+        <span className="text-[10px] font-mono text-slate-500 uppercase">
+          p99 latency × time bucket
         </span>
       </div>
-      <div className="p-2">
-        <ReactECharts
-          option={option}
-          style={{ height: "360px", width: "100%" }}
-          opts={{ renderer: "canvas" }}
-          notMerge={true}
-          lazyUpdate={true}
-        />
+      <div className="p-4 bg-uora-bg/15">
+        {entries.length === 0 ? (
+          <div className="grid h-[280px] place-items-center rounded-md bg-uora-bg/60 text-center border border-uora-border/40">
+            <div>
+              <div className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">Awaiting telemetry stream</div>
+              <div className="mt-1.5 text-[10px] font-sans text-slate-600">Start simulated benchmark load to render realtime latency heatmap.</div>
+            </div>
+          </div>
+        ) : (
+          <ReactECharts
+            option={option}
+            style={{ height: "280px", width: "100%" }}
+            opts={{ renderer: "canvas" }}
+            notMerge={true}
+            lazyUpdate={true}
+          />
+        )}
       </div>
     </div>
   );
