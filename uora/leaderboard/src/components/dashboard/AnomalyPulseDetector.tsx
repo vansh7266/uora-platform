@@ -8,7 +8,7 @@ import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn } from "@/lib/utils";
 
 const ANOMALY_TYPES = [
-  { type: "hardcoded_cheating", label: "Hardcoded Values", severity: "high" },
+  { type: "determinism_drift", label: "Determinism Drift", severity: "high" },
   { type: "memory_leak", label: "Memory Leak", severity: "medium" },
   { type: "crash_loop", label: "Crash Loop", severity: "high" },
   { type: "latency_spike", label: "Latency Spike", severity: "low" },
