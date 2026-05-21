@@ -236,7 +236,7 @@ export function LatencyChart() {
           <div className="grid h-[280px] place-items-center rounded-md bg-uora-bg/60 text-center border border-uora-border/40">
             <div>
               <div className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">Awaiting telemetry stream</div>
-              <div className="mt-1.5 text-[10px] font-sans text-slate-600">Start simulated benchmark load to render realtime latency percentiles.</div>
+              <div className="mt-1.5 text-[10px] font-sans text-slate-600">Submit an engine and wait for benchmark telemetry to render realtime latency percentiles.</div>
             </div>
           </div>
         ) : (
