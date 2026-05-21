@@ -19,7 +19,7 @@ import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn, formatLatency, formatThroughput, formatScore, getLanguageBg, getScoreColor, getLatencyColor } from "@/lib/utils";
 
 export function LeaderboardTable() {
-  const { entries, selectedEntry, setSelectedEntry } = useLeaderboardStore();
+  const { entries } = useLeaderboardStore();
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const toggleExpand = (id: string) => {
@@ -124,23 +124,16 @@ export function LeaderboardTable() {
             </tr>
           </thead>
           <tbody>
-            <AnimatePresence mode="popLayout">
-              {entries.map((entry, index) => (
+            {entries.map((entry, index) => (
+              <>
                 <motion.tr
-                  key={entry.submission_id}
+                  key={`row-${entry.submission_id}`}
                   layout
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.3, delay: index * 0.03 }}
-                  onClick={() => {
-                    toggleExpand(entry.submission_id);
-                    setSelectedEntry(
-                      selectedEntry?.submission_id === entry.submission_id
-                        ? null
-                        : entry
-                    );
-                  }}
+                  onClick={() => toggleExpand(entry.submission_id)}
                   className={cn(
                     "border-b border-uora-border/50 cursor-pointer transition-colors group text-xs",
                     expandedRow === entry.submission_id
@@ -272,8 +265,50 @@ export function LeaderboardTable() {
                     </motion.div>
                   </td>
                 </motion.tr>
-              ))}
-            </AnimatePresence>
+
+                {/* Inline detail expand — renders right under this row */}
+                {expandedRow === entry.submission_id && (
+                  <tr key={`expand-${entry.submission_id}`}>
+                    <td colSpan={10} className="p-0 border-b border-uora-border/50">
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="overflow-hidden bg-uora-bg/50"
+                      >
+                        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <DetailCard
+                            icon={<Clock className="w-4 h-4" />}
+                            label="P50 Latency"
+                            value={formatLatency(entry.p50_latency_ms ?? 0)}
+                            color="text-uora-cyan"
+                          />
+                          <DetailCard
+                            icon={<Zap className="w-4 h-4" />}
+                            label="P99 Latency"
+                            value={formatLatency(entry.p99_latency_ms)}
+                            color="text-uora-warning"
+                          />
+                          <DetailCard
+                            icon={<TrendingUp className="w-4 h-4" />}
+                            label="Throughput"
+                            value={`${formatThroughput(entry.throughput)}/s`}
+                            color="text-uora-success"
+                          />
+                          <DetailCard
+                            icon={<AlertTriangle className="w-4 h-4" />}
+                            label="Anomaly Score"
+                            value={(entry.anomaly_score * 100).toFixed(1) + "%"}
+                            color={entry.anomaly_score > 0.7 ? "text-uora-error" : "text-uora-success"}
+                          />
+                        </div>
+                      </motion.div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
 
             {entries.length === 0 && (
               <tr>
@@ -294,61 +329,6 @@ export function LeaderboardTable() {
           </tbody>
         </table>
       </div>
-
-      {/* Expanded Detail */}
-      <AnimatePresence>
-        {expandedRow && selectedEntry && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="overflow-hidden border-t border-uora-border"
-          >
-            <div className="p-6 bg-uora-bg/50">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <DetailCard
-                  icon={<Clock className="w-4 h-4" />}
-                  label="P50 Latency"
-                  value={formatLatency(selectedEntry.p50_latency_ms ?? 0)}
-                  color="text-uora-cyan"
-                />
-                <DetailCard
-                  icon={<Zap className="w-4 h-4" />}
-                  label="P99 Latency"
-                  value={formatLatency(selectedEntry.p99_latency_ms)}
-                  color="text-uora-warning"
-                />
-                <DetailCard
-                  icon={<TrendingUp className="w-4 h-4" />}
-                  label="Throughput"
-                  value={`${formatThroughput(selectedEntry.throughput)}/s`}
-                  color="text-uora-success"
-                />
-                <DetailCard
-                  icon={<AlertTriangle className="w-4 h-4" />}
-                  label="Anomaly Score"
-                  value={(selectedEntry.anomaly_score * 100).toFixed(1) + "%"}
-                  color={
-                    selectedEntry.anomaly_score > 0.7
-                      ? "text-uora-error"
-                      : "text-uora-success"
-                  }
-                />
-              </div>
-              {selectedEntry.anomaly_type && (
-                <div className="mt-4 px-4 py-2.5 rounded bg-uora-error/5 border border-uora-error/20">
-                  <div className="flex items-center gap-2 text-xs text-uora-error">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span className="font-medium">Anomaly Detected:</span>
-                    <span>{selectedEntry.anomaly_type}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

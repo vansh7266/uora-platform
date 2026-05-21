@@ -32,6 +32,8 @@ import {
   Binary,
   Layers,
   FlaskConical,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 
 const sections = [
@@ -384,9 +386,25 @@ export default function DashboardPage() {
                       <div className="text-[10px] font-mono font-bold tracking-wider text-slate-500 mb-3 border-b border-uora-border/60 pb-2 uppercase">
                         Report Availability
                       </div>
-                      <div className="font-mono text-[10px] text-slate-500 leading-relaxed">
-                        The backend generates score reports during scoring. A download endpoint is intentionally not shown until the report artifact is exposed by the API.
-                      </div>
+                      {currentAuditItem?.status === "scored" ? (
+                        <div className="flex items-start gap-3">
+                          <CheckCircle2 className="w-4 h-4 text-uora-success flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[11px] font-mono text-uora-success font-semibold">Telemetry report ready</p>
+                            <p className="text-[10px] font-mono text-slate-500 mt-1">
+                              Score artifacts have been indexed. Contact your admin to export the full compliance PDF once the submission ID is verified.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-3">
+                          <Loader2 className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5 animate-spin" />
+                          <p className="text-[10px] font-mono text-slate-500 leading-relaxed">
+                            Report will be available once this submission completes scoring. Current status:{" "}
+                            <span className="text-uora-warning uppercase font-bold">{currentAuditItem?.status || "pending"}</span>.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

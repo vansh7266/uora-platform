@@ -117,9 +117,11 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
     })),
 
   addSubmission: (submission) =>
-    set((state) => ({
-      submissions: [submission, ...state.submissions],
-    })),
+    set((state) => {
+      // Idempotent: skip if this ID is already tracked
+      if (state.submissions.some((s) => s.id === submission.id)) return state;
+      return { submissions: [submission, ...state.submissions] };
+    }),
 
   updateSubmissionStatus: (id, status, error) =>
     set((state) => ({
