@@ -20,7 +20,7 @@ const jetbrainsMono = localFont({
 export const metadata: Metadata = {
   title: "UORA — Unified Orderbook Resilience Architecture",
   description:
-    "Production-grade distributed benchmarking platform for high-frequency trading matching engines.",
+    "Deterministic high-concurrency benchmarking and secure isolation for high-frequency trading matching engines.",
   keywords: ["UORA", "HFT", "trading", "benchmark", "orderbook", "matching engine", "latency"],
   icons: {
     icon: "/favicon.ico",
