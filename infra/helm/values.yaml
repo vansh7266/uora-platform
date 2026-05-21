@@ -30,8 +30,16 @@ botFleet:
 
 redis:
   enabled: true
-  url: "redis://redis-master.uora.svc.cluster.local:6379/0"
+  host: "redis-master.uora.svc.cluster.local"
+  port: 6379
+  existingSecret: "uora-runtime-secrets"
+  passwordKey: "redis-password"
 
 timescaledb:
   enabled: true
-  url: "postgresql://uora:uora12345@timescaledb.uora.svc.cluster.local:5432/uora_metrics"
+  host: "timescaledb.uora.svc.cluster.local"
+  port: 5432
+  database: "uora_metrics"
+  user: "uora"
+  existingSecret: "uora-runtime-secrets"
+  passwordKey: "timescale-password"
