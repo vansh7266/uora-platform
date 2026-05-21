@@ -28,12 +28,12 @@ export function LeaderboardTable() {
 
   const getRankBadge = (rank: number) => {
     if (rank === 1)
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+      return "bg-uora-cyan/15 text-uora-cyan border-uora-cyan/30 shadow-[0_0_8px_rgba(226,181,62,0.1)]";
     if (rank === 2)
-      return "bg-slate-400/20 text-slate-300 border-slate-400/30";
+      return "bg-slate-300/10 text-slate-300 border-slate-300/20";
     if (rank === 3)
-      return "bg-orange-500/20 text-orange-400 border-orange-500/30";
-    return "bg-uora-elevated text-slate-400 border-uora-border";
+      return "bg-amber-600/10 text-amber-500 border-amber-600/25";
+    return "bg-uora-elevated text-slate-500 border-uora-border";
   };
 
   const getRankChange = (rank: number, prevRank: number) => {
@@ -68,21 +68,21 @@ export function LeaderboardTable() {
         return (
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-uora-blue animate-pulse" />
-            <span className="text-blue-400">Running</span>
+            <span className="text-blue-400 text-xs">Running</span>
           </div>
         );
       case "completed":
         return (
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-uora-success" />
-            <span className="text-uora-success">Done</span>
+            <span className="text-uora-success text-xs">Done</span>
           </div>
         );
       case "failed":
         return (
           <div className="flex items-center gap-1.5">
             <XCircle className="w-3.5 h-3.5 text-uora-error" />
-            <span className="text-uora-error">Failed</span>
+            <span className="text-uora-error text-xs">Failed</span>
           </div>
         );
       default:
@@ -91,18 +91,18 @@ export function LeaderboardTable() {
   };
 
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-xl overflow-hidden">
+    <div className="bg-uora-surface border border-uora-border rounded-md overflow-hidden shadow-lg">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-uora-border flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <TrendingUp className="w-5 h-5 text-uora-cyan" />
-          <h2 className="text-lg font-semibold">Live Leaderboard</h2>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-uora-cyan/10 text-uora-cyan border border-uora-cyan/20">
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-uora-cyan animate-pulse" />
+          <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Live Leaderboard</h2>
+          <span className="px-2 py-0.5 rounded border text-[9px] font-mono font-bold bg-uora-cyan/10 text-uora-cyan border-uora-cyan/20 tracking-wider">
             REAL-TIME
           </span>
         </div>
-        <span className="text-xs text-slate-500 font-mono">
-          {entries.length} teams
+        <span className="text-[10px] font-mono text-slate-500 uppercase">
+          {entries.length} teams active
         </span>
       </div>
 
@@ -110,17 +110,17 @@ export function LeaderboardTable() {
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="text-left text-slate-500 text-xs font-medium border-b border-uora-border bg-uora-bg/50">
+            <tr className="text-left text-slate-500 text-[10px] font-mono uppercase tracking-wider font-bold border-b border-uora-border bg-uora-bg/50">
               <th className="px-4 py-3 w-16">Rank</th>
-              <th className="px-4 py-3 w-8" />
-              <th className="px-4 py-3">Team</th>
-              <th className="px-4 py-3 w-20">Lang</th>
-              <th className="px-4 py-3 w-24 text-right">Score</th>
-              <th className="px-4 py-3 w-28 text-right">P99 Latency</th>
-              <th className="px-4 py-3 w-28 text-right">Throughput</th>
-              <th className="px-4 py-3 w-24 text-right">Correctness</th>
-              <th className="px-4 py-3 w-24">Status</th>
-              <th className="px-4 py-3 w-8" />
+              <th className="px-3 py-3 w-8" />
+              <th className="px-4 py-3">Team Name</th>
+              <th className="px-4 py-3 w-24">Language</th>
+              <th className="px-4 py-3 w-28 text-right">Score</th>
+              <th className="px-4 py-3 w-32 text-right">P99 Latency</th>
+              <th className="px-4 py-3 w-32 text-right">Throughput</th>
+              <th className="px-4 py-3 w-28 text-right">Correctness</th>
+              <th className="px-4 py-3 w-28">Status</th>
+              <th className="px-4 py-3 w-10" />
             </tr>
           </thead>
           <tbody>
@@ -142,7 +142,7 @@ export function LeaderboardTable() {
                     );
                   }}
                   className={cn(
-                    "border-b border-uora-border/50 cursor-pointer transition-colors group",
+                    "border-b border-uora-border/50 cursor-pointer transition-colors group text-xs",
                     expandedRow === entry.submission_id
                       ? "bg-uora-cyan/5"
                       : "hover:bg-uora-elevated/50"
@@ -153,7 +153,7 @@ export function LeaderboardTable() {
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          "inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold text-xs border",
+                          "inline-flex items-center justify-center w-8 h-8 rounded font-bold text-xs border font-mono shadow-sm",
                           getRankBadge(entry.rank)
                         )}
                       >
@@ -163,17 +163,17 @@ export function LeaderboardTable() {
                   </td>
 
                   {/* Rank Change */}
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     {getRankChange(entry.rank, entry.prevRank)}
                   </td>
 
                   {/* Team */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-uora-cyan/30 to-uora-blue/30 flex items-center justify-center text-xs font-bold font-mono">
+                      <div className="w-8 h-8 rounded bg-gradient-to-br from-uora-cyan/30 to-uora-blue/30 flex items-center justify-center text-xs font-bold font-mono text-white">
                         {entry.team.charAt(0)}
                       </div>
-                      <span className="font-medium text-sm text-slate-200 group-hover:text-white transition-colors">
+                      <span className="font-semibold text-xs sm:text-sm text-slate-200 group-hover:text-white transition-colors">
                         {entry.team}
                       </span>
                     </div>
@@ -196,7 +196,7 @@ export function LeaderboardTable() {
                     <div className="relative">
                       <span
                         className={cn(
-                          "font-mono font-bold text-sm",
+                          "font-mono font-bold text-xs sm:text-sm",
                           getScoreColor(entry.composite_score)
                         )}
                       >
@@ -220,7 +220,7 @@ export function LeaderboardTable() {
                   <td className="px-4 py-3 text-right">
                     <span
                       className={cn(
-                        "font-mono text-sm",
+                        "font-mono font-bold text-xs sm:text-sm",
                         getLatencyColor(entry.p99_latency_ms)
                       )}
                     >
@@ -230,9 +230,9 @@ export function LeaderboardTable() {
 
                   {/* Throughput */}
                   <td className="px-4 py-3 text-right">
-                    <span className="font-mono text-sm text-slate-300">
+                    <span className="font-mono font-bold text-xs sm:text-sm text-slate-100">
                       {formatThroughput(entry.throughput)}
-                      <span className="text-slate-500 ml-1 text-xs">/s</span>
+                      <span className="text-slate-500 ml-1 text-[10px]">/s</span>
                     </span>
                   </td>
 
@@ -240,7 +240,7 @@ export function LeaderboardTable() {
                   <td className="px-4 py-3 text-right">
                     <span
                       className={cn(
-                        "font-mono text-sm",
+                        "font-mono font-bold text-xs sm:text-sm",
                         entry.correctness_rate >= 0.99
                           ? "text-uora-success"
                           : entry.correctness_rate >= 0.95
@@ -254,7 +254,7 @@ export function LeaderboardTable() {
 
                   {/* Status */}
                   <td className="px-4 py-3">
-                    <div className="text-xs">
+                    <div className="text-xs font-mono">
                       {getStatusIcon(entry.status)}
                     </div>
                   </td>
@@ -268,7 +268,7 @@ export function LeaderboardTable() {
                       }}
                       transition={{ duration: 0.2 }}
                     >
-                      <ChevronDown className="w-4 h-4 text-slate-500" />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
                     </motion.div>
                   </td>
                 </motion.tr>
@@ -282,10 +282,10 @@ export function LeaderboardTable() {
                   className="px-6 py-16 text-center text-slate-500"
                 >
                   <div className="flex flex-col items-center gap-3">
-                    <Cpu className="w-8 h-8 text-slate-600" />
-                    <p className="text-sm">Waiting for benchmark data...</p>
-                    <p className="text-xs text-slate-600">
-                      Submissions will appear here in real-time
+                    <Cpu className="w-8 h-8 text-slate-700 animate-pulse" />
+                    <p className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">Awaiting Telemetry Stream...</p>
+                    <p className="text-[10px] font-mono text-slate-600 max-w-md mx-auto leading-relaxed">
+                      No matching engines currently scored. Transmit proprietary code files in the Submit portal to initialize concurrency load simulation and scoring.
                     </p>
                   </div>
                 </td>
@@ -337,7 +337,7 @@ export function LeaderboardTable() {
                 />
               </div>
               {selectedEntry.anomaly_type && (
-                <div className="mt-4 px-4 py-2.5 rounded-lg bg-uora-error/5 border border-uora-error/20">
+                <div className="mt-4 px-4 py-2.5 rounded bg-uora-error/5 border border-uora-error/20">
                   <div className="flex items-center gap-2 text-xs text-uora-error">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span className="font-medium">Anomaly Detected:</span>
@@ -365,12 +365,12 @@ function DetailCard({
   color: string;
 }) {
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-lg p-3">
+    <div className="bg-uora-surface border border-uora-border rounded p-3">
       <div className="flex items-center gap-2 text-slate-500 text-xs mb-1">
         {icon}
         {label}
       </div>
-      <span className={cn("font-mono font-bold text-sm", color)}>
+      <span className={cn("font-mono font-bold text-xs sm:text-sm", color)}>
         {value}
       </span>
     </div>
