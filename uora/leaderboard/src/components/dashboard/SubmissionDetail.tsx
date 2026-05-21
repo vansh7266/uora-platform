@@ -43,25 +43,11 @@ export function SubmissionDetail() {
   const router = useRouter();
   const { selectedEntry } = useLeaderboardStore();
 
-  const fallbackEntry = useMemo(() => ({
-    rank: 1,
-    prevRank: 1,
-    submission_id: "sub-001",
-    team: "Team Alpha",
-    language: "cpp",
-    composite_score: 95.2,
-    p99_latency_ms: 1.2,
-    p50_latency_ms: 0.4,
-    throughput: 45000,
-    correctness_rate: 0.999,
-    status: "completed" as const,
-    anomaly_score: 0.15,
-  }), []);
-
-  const entry = selectedEntry || fallbackEntry;
+  const entry = selectedEntry;
 
   // Latency histogram data
   const histogramOption = useMemo(() => {
+    if (!entry) return null;
     const bins = 30;
     const labels: string[] = [];
     const values: number[] = [];
@@ -142,6 +128,26 @@ export function SubmissionDetail() {
       ],
     };
   }, [entry]);
+
+  if (!entry || !histogramOption) {
+    return (
+      <div className="min-h-screen bg-uora-bg p-8 text-slate-400">
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="mb-6 inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-uora-cyan"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to dashboard
+        </button>
+        <div className="rounded-md border border-uora-border bg-uora-surface p-8 text-center">
+          <FileText className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+          <p className="text-xs font-mono uppercase tracking-wider">
+            Select a scored leaderboard entry to inspect details.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-uora-bg bg-grid-pattern pt-20 px-4 sm:px-6 lg:px-8 pb-12">
