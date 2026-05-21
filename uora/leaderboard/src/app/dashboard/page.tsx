@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Navbar } from "@/components/layout/Navbar";
 import { LeaderboardTable } from "@/components/dashboard/LeaderboardTable";
@@ -14,6 +15,7 @@ import { ScoreRevealLiquidFill } from "@/components/dashboard/ScoreRevealLiquidF
 import { RunTimeline } from "@/components/dashboard/RunTimeline";
 import { useSSE } from "@/hooks/useSSE";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 import {
   Activity,
   Clock3,
@@ -45,11 +47,38 @@ const panelIn = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState("submit");
   const { connected, entries, lastUpdated, submissions } = useLeaderboardStore();
+  const { isAuthenticated, isLoading } = useAuthStore();
   const [selectedAuditEngine, setSelectedAuditEngine] = useState<string>("");
+  const [authChecked, setAuthChecked] = useState(false);
 
   useSSE();
+
+  // Auth guard — redirect to /auth if not logged in
+  useEffect(() => {
+    // Wait one tick for Zustand persist to hydrate from localStorage
+    const timer = setTimeout(() => {
+      setAuthChecked(true);
+      if (!isAuthenticated) {
+        router.replace("/auth");
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, router]);
+
+  // Show a minimal loading screen while we check auth
+  if (!authChecked || isLoading) {
+    return (
+      <div className="min-h-screen bg-uora-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-uora-border border-t-uora-cyan rounded-full animate-spin" />
+          <p className="text-xs font-mono text-slate-500 uppercase tracking-widest">Verifying session...</p>
+        </div>
+      </div>
+    );
+  }
 
   const topScore = entries.length
     ? Math.max(...entries.map((entry) => entry.composite_score)).toFixed(1)
