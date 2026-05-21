@@ -3,6 +3,7 @@ import json
 import time
 from pathlib import Path
 from uora.bot_fleet.coordinator import BotCoordinator
+from uora.benchmark.contracts import assert_benchmark_succeeded
 from uora.telemetry.ingester import TelemetryIngester
 from uora.validator.diff_engine import CorrectnessValidator
 from uora.scoring.engine import ScoringEngine
@@ -24,17 +25,20 @@ async def main():
 
     # 3. Run benchmark
     print("\n--- BENCHMARK RUNNING ---")
-    start = time.time()
-    await coordinator.run_benchmark(10)
-    elapsed = time.time() - start
-    print(f"--- BENCHMARK COMPLETE ({elapsed:.1f}s) ---\n")
+    try:
+        start = time.time()
+        await coordinator.run_benchmark(10)
+        elapsed = time.time() - start
+        print(f"--- BENCHMARK COMPLETE ({elapsed:.1f}s) ---\n")
 
-    # 4. Get results
-    results = await coordinator.get_results()
-    print(f"✓ Total orders  : {results['total_orders']}")
-    print(f"✓ Avg latency   : {results['avg_latency_ns']/1e6:.2f} ms")
-    print(f"✓ Success rate  : {results['success_rate']*100:.1f}%")
-    await coordinator.stop()
+        # 4. Get results
+        results = await coordinator.get_results()
+        print(f"✓ Total orders  : {results['total_orders']}")
+        print(f"✓ Avg latency   : {results['avg_latency_ns']/1e6:.2f} ms")
+        print(f"✓ Success rate  : {results['success_rate']*100:.1f}%")
+        assert_benchmark_succeeded(results)
+    finally:
+        await coordinator.stop()
 
     # 5. Telemetry ingester — parse mock Envoy logs (no live DB required)
     ingester = TelemetryIngester()   # default kwargs: host/port/user/password/db
