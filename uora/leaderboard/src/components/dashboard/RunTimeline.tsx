@@ -20,7 +20,7 @@ const STAGES = [
   { id: "building", label: "Building", detail: "Compiling source binaries", icon: Layers },
   { id: "built", label: "Built", detail: "Binary compilation nominal", icon: Cpu },
   { id: "deployed", label: "Deployed", detail: "Isolated in secure gVisor", icon: ShieldCheck },
-  { id: "benchmarking", label: "Benchmarking", detail: "Simulating FIX/WS load", icon: TrendingUp },
+  { id: "benchmarking", label: "Benchmarking", detail: "Replaying REST order flow", icon: TrendingUp },
   { id: "validating", label: "Validating", detail: "Checking priority matching", icon: Compass },
   { id: "scored", label: "Scored", detail: "Telemetry metrics indexed", icon: Server },
 ];
@@ -39,10 +39,6 @@ export function RunTimeline() {
     let currentStageIndex = order.indexOf(subStatus);
     if (isScored) {
       currentStageIndex = order.indexOf("scored");
-    } else if (subStatus === "deployed") {
-      // If deployed but not scored yet, we are benchmarking/validating
-      // Let's dynamically simulate that we're between deployed, benchmarking and validating
-      currentStageIndex = order.indexOf("benchmarking");
     }
 
     const stageIndex = order.indexOf(stageId);
@@ -200,20 +196,18 @@ export function RunTimeline() {
               })}
             </div>
 
-            {/* Simulated Live Console Stream for active compiling/benchmarking */}
             {finalStatus !== "failed" && finalStatus !== "scored" && (
               <div className="mt-6 p-4 bg-uora-bg border border-uora-border rounded-md font-mono text-[10px] text-slate-500 select-none overflow-hidden h-24 flex flex-col justify-end">
-                <div className="text-uora-success mb-1">&gt; uora-bench@isolate-host: INITIALIZING HARNESS</div>
-                <div>&gt; Spinning up gVisor secure containment network context... OK</div>
-                <div className="animate-pulse">&gt; {finalStatus === "building" ? "Compiling translation units (gcc -O3 -std=c++20)..." : "Simulating high-concurrency order replay load tests..."}</div>
+                <div className="text-uora-success mb-1">&gt; status: {finalStatus.toUpperCase()}</div>
+                <div>&gt; Waiting for the backend worker to publish the next lifecycle event.</div>
+                <div className="animate-pulse">&gt; This panel displays persisted submission state only.</div>
               </div>
             )}
 
             {finalStatus === "failed" && (
               <div className="mt-6 p-4 bg-uora-error/5 border border-uora-error/20 rounded-md font-mono text-[10px] text-uora-error overflow-hidden">
-                <div>&gt; uora-bench@compile-host: CRITICAL ENGINE BUILD FAILURE</div>
-                <div>&gt; compilation error: reference to undefined symbol &apos;match_limit_exceeded&apos;</div>
-                <div>&gt; deployment halted. check source binary exports and resubmit.</div>
+                <div>&gt; submission failed</div>
+                <div>&gt; {sub.error || sub.buildLog || "The backend did not provide an error detail."}</div>
               </div>
             )}
           </div>
