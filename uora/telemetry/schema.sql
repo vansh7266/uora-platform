@@ -6,7 +6,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- 1. Latency Events (Raw Telemetry)
 CREATE TABLE IF NOT EXISTS latency_events (
     time            TIMESTAMPTZ NOT NULL,
-    submission_id   UUID,
+    submission_id   TEXT,
     bot_id          TEXT,
     order_id        TEXT,
     endpoint        TEXT,
@@ -22,7 +22,7 @@ SELECT create_hypertable('latency_events', 'time', chunk_time_interval => INTERV
 -- 2. Correctness Violations
 CREATE TABLE IF NOT EXISTS correctness_violations (
     time            TIMESTAMPTZ NOT NULL,
-    submission_id   UUID NOT NULL,
+    submission_id   TEXT NOT NULL,
     level           INT,
     order_id        TEXT,
     expected        JSONB,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS correctness_violations (
 -- 3. Benchmark Scores (Aggregated Results)
 CREATE TABLE IF NOT EXISTS benchmark_scores (
     time             TIMESTAMPTZ NOT NULL,
-    submission_id    UUID NOT NULL,
+    submission_id    TEXT NOT NULL,
     throughput       FLOAT,
     correctness_rate FLOAT,
     p99_latency_ns   BIGINT,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS benchmark_scores (
 -- 4. Build Events (submission build/deploy audit trail)
 CREATE TABLE IF NOT EXISTS build_events (
     time             TIMESTAMPTZ NOT NULL,
-    submission_id    UUID NOT NULL,
+    submission_id    TEXT NOT NULL,
     event            TEXT NOT NULL,
     detail           TEXT
 );

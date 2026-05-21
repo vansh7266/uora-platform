@@ -69,9 +69,16 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
     <motion.aside
       initial={{ x: -20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      className="fixed left-0 top-16 bottom-0 z-40 hidden lg:flex flex-col border-r border-uora-border bg-uora-bg/80 backdrop-blur-xl"
-      style={{ width: collapsed ? 64 : 200 }}
+      className="fixed left-0 top-16 bottom-0 z-40 hidden lg:flex flex-col border-r border-[#1b2533] bg-[#080d13]/95 backdrop-blur-xl"
+      style={{ width: collapsed ? 68 : 224 }}
     >
+      {!collapsed && (
+        <div className="border-b border-[#1b2533] px-4 py-4">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            Operations
+          </div>
+        </div>
+      )}
       <div className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
         {sidebarLinks.map((link) => {
           const isActive = activeSection === link.section;
@@ -82,8 +89,8 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                 isActive
-                  ? "text-uora-cyan bg-uora-cyan/10 shadow-[inset_0_0_0_1px_rgba(6,182,212,0.2)]"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-uora-elevated"
+                  ? "text-uora-cyan bg-uora-cyan/10 shadow-[inset_3px_0_0_rgba(6,182,212,0.85),inset_0_0_0_1px_rgba(6,182,212,0.16)]"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#101722]"
               )}
             >
               <link.icon className="w-4 h-4 flex-shrink-0" />

@@ -25,9 +25,12 @@ export function AnomalyPulseDetector() {
     const latest = anomalies[anomalies.length - 1];
     if (latest.score <= 0.7) return;
 
-    setIsShaking(true);
-    const timer = setTimeout(() => setIsShaking(false), 600);
-    return () => clearTimeout(timer);
+    const startTimer = setTimeout(() => setIsShaking(true), 0);
+    const stopTimer = setTimeout(() => setIsShaking(false), 600);
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(stopTimer);
+    };
   }, [anomalies]);
 
   // Compute current max anomaly score from entries
@@ -131,7 +134,7 @@ export function AnomalyPulseDetector() {
                 const matching = anomalies.filter(
                   (a) => a.type === at.type
                 ).length;
-                return Math.min(matching * 0.2 + Math.random() * 0.05, 1);
+                return Math.min(matching * 0.2, 1);
               }),
               name: "Anomaly Profile",
               areaStyle: {

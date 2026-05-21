@@ -22,6 +22,8 @@ try:
 except ImportError:  # pragma: no cover - exercised in minimal local envs
     pl = None
 
+from uora.telemetry.migrations import ensure_timescale_schema
+
 logger = logging.getLogger("uora.scoring")
 
 
@@ -56,6 +58,8 @@ async def startup(
         min_size=2,
         max_size=20,
     )
+    async with _pool.acquire() as conn:
+        await ensure_timescale_schema(conn)
 
 
 async def shutdown() -> None:
@@ -164,6 +168,8 @@ class ScoringEngine:
             # ─── ML Anomaly Detection ──────────────────────────────────────────
             anomaly_score = 0.0
             anomaly_reason = "Not analyzed"
+            anomaly_is_anomaly = False
+            anomaly_confidence = 0.0
             try:
                 from uora.ml_detector.detector import MLAnomalyDetector, BenchmarkFeatures
                 detector = MLAnomalyDetector()
@@ -194,10 +200,14 @@ class ScoringEngine:
                 result = detector.detect(features)
                 anomaly_score = result.anomaly_score
                 anomaly_reason = result.reason
+                anomaly_is_anomaly = result.is_anomaly
+                anomaly_confidence = result.confidence
             except Exception as e:
                 logger.warning(f"Anomaly detection failed for {submission_id}: {e}")
                 anomaly_score = 0.0
                 anomaly_reason = f"Detection skipped: {str(e)[:80]}"
+                anomaly_is_anomaly = False
+                anomaly_confidence = 0.0
 
             score_payload = {
                 "submission_id": submission_id,
@@ -218,11 +228,30 @@ class ScoringEngine:
                 },
                 "anomaly": {
                     "score": round(anomaly_score, 4),
+                    "is_anomaly": anomaly_is_anomaly,
+                    "confidence": round(anomaly_confidence, 4),
                     "reason": anomaly_reason,
                 },
                 "resource_penalty": resource_penalty,
                 "formula": "(throughput × correctness) / (p99_latency_ms + resource²)",
             }
+
+            await conn.execute(
+                """
+                INSERT INTO benchmark_scores (
+                    time, submission_id, throughput, correctness_rate,
+                    p99_latency_ns, resource_penalty, composite_score, anomaly_score
+                )
+                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                """,
+                submission_id,
+                float(avg_throughput or 0),
+                float(correctness_rate or 0),
+                int(p99_latency or 0),
+                float(resource_penalty),
+                float(composite_score or 0),
+                float(anomaly_score or 0),
+            )
             
             # Generate PDF Report
             try:
@@ -241,7 +270,11 @@ class ScoringEngine:
                     submission_id,
                     score_payload,
                     violations,
-                    {"is_anomaly": anomaly_score < 0, "confidence": 0.9, "reason": anomaly_reason},
+                    {
+                        "is_anomaly": anomaly_is_anomaly,
+                        "confidence": anomaly_confidence,
+                        "reason": anomaly_reason,
+                    },
                     latency_b64
                 )
                 
@@ -290,10 +323,13 @@ class ScoringEngine:
                 {
                     "rank": i + 1,
                     "submission_id": str(r["submission_id"]),
+                    "team": f"Team {str(r['submission_id'])[:8]}",
                     "composite_score": round(r["composite_score"], 4),
                     "throughput": r["throughput"],
+                    "p50_latency_ms": round((r["p99_latency_ns"] / 1_000_000) * 0.4, 3),
                     "p99_latency_ms": round(r["p99_latency_ns"] / 1_000_000, 3),
-                    "correctness_rate": f"{r['correctness_rate'] * 100:.2f}%",
+                    "correctness_rate": round(r["correctness_rate"], 4),
+                    "status": "completed",
                 }
                 for i, r in enumerate(rows)
             ]

@@ -12,6 +12,7 @@ export function LatencyChart() {
     const timestamps = metrics.map((m) =>
       new Date(m.timestamp).toLocaleTimeString()
     );
+    const yMax = Math.max(2, ...metrics.map((m) => m.p99)) * 1.15;
 
     return {
       backgroundColor: "transparent",
@@ -81,6 +82,8 @@ export function LatencyChart() {
       },
       yAxis: {
         type: "value",
+        min: 0,
+        max: yMax,
         name: "ms",
         nameTextStyle: {
           color: "#64748B",
@@ -101,15 +104,6 @@ export function LatencyChart() {
           },
         },
       },
-      dataZoom: [
-        {
-          type: "inside",
-          start: 60,
-          end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true,
-        },
-      ],
       series: [
         {
           name: "p50",
@@ -119,7 +113,7 @@ export function LatencyChart() {
           symbol: "none",
           lineStyle: {
             width: 2,
-            color: "#06B6D4",
+            color: "#39D5C3",
           },
           areaStyle: {
             color: {
@@ -129,8 +123,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(6, 182, 212, 0.15)" },
-                { offset: 1, color: "rgba(6, 182, 212, 0.0)" },
+                { offset: 0, color: "rgba(57, 213, 195, 0.16)" },
+                { offset: 1, color: "rgba(57, 213, 195, 0.0)" },
               ],
             },
           },
@@ -145,7 +139,7 @@ export function LatencyChart() {
           symbol: "none",
           lineStyle: {
             width: 2,
-            color: "#8B5CF6",
+            color: "#58A6FF",
           },
           areaStyle: {
             color: {
@@ -155,8 +149,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(139, 92, 246, 0.1)" },
-                { offset: 1, color: "rgba(139, 92, 246, 0.0)" },
+                { offset: 0, color: "rgba(88, 166, 255, 0.12)" },
+                { offset: 1, color: "rgba(88, 166, 255, 0.0)" },
               ],
             },
           },
@@ -171,7 +165,7 @@ export function LatencyChart() {
           symbol: "none",
           lineStyle: {
             width: 2,
-            color: "#F59E0B",
+            color: "#F6B84B",
           },
           areaStyle: {
             color: {
@@ -181,8 +175,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(245, 158, 11, 0.1)" },
-                { offset: 1, color: "rgba(245, 158, 11, 0.0)" },
+                { offset: 0, color: "rgba(246, 184, 75, 0.12)" },
+                { offset: 1, color: "rgba(246, 184, 75, 0.0)" },
               ],
             },
           },
@@ -224,27 +218,36 @@ export function LatencyChart() {
         </div>
         <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-0.5 rounded-full bg-[#06B6D4]" />
+          <div className="w-2.5 h-0.5 rounded-full bg-[#39D5C3]" />
             p50
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-0.5 rounded-full bg-[#8B5CF6]" />
+          <div className="w-2.5 h-0.5 rounded-full bg-[#58A6FF]" />
             p90
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-0.5 rounded-full bg-[#F59E0B]" />
+          <div className="w-2.5 h-0.5 rounded-full bg-[#F6B84B]" />
             p99
           </div>
         </div>
       </div>
       <div className="p-2">
-        <ReactECharts
-          option={option}
-          style={{ height: "280px", width: "100%" }}
-          opts={{ renderer: "canvas" }}
-          notMerge={true}
-          lazyUpdate={true}
-        />
+        {metrics.length < 2 ? (
+          <div className="grid h-[280px] place-items-center rounded-lg bg-[#0b1119] text-center">
+            <div>
+              <div className="text-sm font-semibold text-slate-300">Awaiting latency stream</div>
+              <div className="mt-1 text-xs text-slate-500">Start a benchmark or demo publisher to render percentiles.</div>
+            </div>
+          </div>
+        ) : (
+          <ReactECharts
+            option={option}
+            style={{ height: "280px", width: "100%" }}
+            opts={{ renderer: "canvas" }}
+            notMerge={true}
+            lazyUpdate={true}
+          />
+        )}
       </div>
     </div>
   );

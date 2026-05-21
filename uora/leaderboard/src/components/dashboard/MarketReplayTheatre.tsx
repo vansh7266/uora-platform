@@ -26,31 +26,36 @@ interface OrderBookSnapshot {
   lastSide: "buy" | "sell";
 }
 
-// Generate mock orderbook data
-function generateOrderbook(): OrderBookSnapshot {
-  const midPrice = 100 + Math.random() * 2 - 1;
+function deterministicUnit(seed: number): number {
+  const value = Math.sin(seed * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+// Generate deterministic replay data so visual state is stable across renders.
+function generateOrderbook(index: number): OrderBookSnapshot {
+  const midPrice = 100 + deterministicUnit(index + 1) * 2 - 1;
   const bids: OrderBookLevel[] = [];
   const asks: OrderBookLevel[] = [];
 
   for (let i = 0; i < 8; i++) {
     bids.push({
       price: midPrice - 0.01 * (i + 1),
-      quantity: Math.floor(Math.random() * 500 + 50),
-      orders: Math.floor(Math.random() * 10 + 1),
+      quantity: Math.floor(deterministicUnit(index * 17 + i) * 500 + 50),
+      orders: Math.floor(deterministicUnit(index * 19 + i) * 10 + 1),
     });
     asks.push({
       price: midPrice + 0.01 * (i + 1),
-      quantity: Math.floor(Math.random() * 500 + 50),
-      orders: Math.floor(Math.random() * 10 + 1),
+      quantity: Math.floor(deterministicUnit(index * 23 + i) * 500 + 50),
+      orders: Math.floor(deterministicUnit(index * 29 + i) * 10 + 1),
     });
   }
 
   return {
     bids: bids.sort((a, b) => b.price - a.price),
     asks: asks.sort((a, b) => a.price - b.price),
-    timestamp: Date.now(),
-    lastPrice: midPrice + (Math.random() > 0.5 ? 0.01 : -0.01),
-    lastSide: Math.random() > 0.5 ? "buy" : "sell",
+    timestamp: index * 100,
+    lastPrice: midPrice + (index % 2 === 0 ? 0.01 : -0.01),
+    lastSide: index % 2 === 0 ? "buy" : "sell",
   };
 }
 
@@ -58,9 +63,7 @@ function generateOrderbook(): OrderBookSnapshot {
 function generateSequence(count: number): OrderBookSnapshot[] {
   const sequence: OrderBookSnapshot[] = [];
   for (let i = 0; i < count; i++) {
-    const snapshot = generateOrderbook();
-    snapshot.timestamp = Date.now() - (count - i) * 100;
-    sequence.push(snapshot);
+    sequence.push(generateOrderbook(i));
   }
   return sequence;
 }
@@ -92,8 +95,7 @@ export function MarketReplayTheatre() {
         return prev;
       }
 
-      // Simulate a match (cross) occasionally
-      if (Math.random() < 0.1) {
+      if (next % 10 === 0) {
         setMatchedPrice(sequence[next].lastPrice);
         setTimeout(() => setMatchedPrice(null), 300);
       }

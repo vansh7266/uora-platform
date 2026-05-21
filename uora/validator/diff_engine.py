@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import math
 import sys
-import time
 import difflib
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,8 +144,8 @@ class CorrectnessValidator:
 
         # Replay actions through reference LOB
         reference_states = []
-        for action in actions:
-            ref_result = self._run_reference_action(action)
+        for index, action in enumerate(actions):
+            ref_result = self._run_reference_action(action, index)
             reference_states.append(ref_result)
 
         # Compare against contestant responses
@@ -201,18 +200,19 @@ class CorrectnessValidator:
             ],
         }
 
-    def _run_reference_action(self, action: dict) -> dict:
+    def _run_reference_action(self, action: dict, index: int) -> dict:
         """Run a single action through the reference LOB."""
         action_type = action.get("type", "").lower()
 
         if action_type in ("limit", "market", "ioc", "fok"):
+            order_id = action.get("order_id", f"order-{index}")
             order = Order(
-                id=action.get("order_id", f"order-{time.time_ns()}"),
+                id=order_id,
                 side=action["side"],
                 order_type=action_type,
                 price=action.get("price"),
                 quantity=_action_quantity(action),
-                participant_id=action.get("participant_id", action.get("order_id", f"bot-{time.time_ns()}")),
+                participant_id=action.get("participant_id", order_id),
             )
             fills, updated = self.reference_book.submit_order(order)
             return {
@@ -433,5 +433,19 @@ def test_validator_accepts_quantity_alias_from_openapi_actions():
     assert report["violations_count"] == 0
 
 
+def test_reference_fallback_ids_are_deterministic():
+    validator = CorrectnessValidator()
+    actions = [{"type": "limit", "side": "sell", "price": 100.0, "qty": 10}]
+
+    first = validator._run_reference_action(actions[0], 0)
+    validator = CorrectnessValidator()
+    second = validator._run_reference_action(actions[0], 0)
+
+    assert first == second
+
+
 if __name__ == "__main__":
     test_validator()
+    test_validator_flags_response_count_mismatch()
+    test_validator_accepts_quantity_alias_from_openapi_actions()
+    test_reference_fallback_ids_are_deterministic()

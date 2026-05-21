@@ -129,6 +129,7 @@ class TradingBot:
         self.session: aiohttp.ClientSession | None = None
         self._fix_reader: asyncio.StreamReader | None = None
         self._fix_writer: asyncio.StreamWriter | None = None
+        self._fix_seq_num = 1
         self._base_url: str = ""
         self._circuit_breaker: _CircuitBreaker = _CircuitBreaker()
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(
@@ -179,20 +180,51 @@ class TradingBot:
         )
         logger.info("TradingBot connected to %s", self._base_url)
 
+    async def close(self) -> None:
+        """Close the active REST or FIX connection."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+        if self._fix_writer:
+            self._fix_writer.close()
+            await self._fix_writer.wait_closed()
+            self._fix_writer = None
+            self._fix_reader = None
+
     # ── Order submission helpers ───────────────────────────────────────────────
     
     async def _send_action(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         if self.protocol == "FIX":
             from uora.bot_fleet.fix_adapter import FIXAdapter
-            msg = FIXAdapter.build_message(payload, sender_comp_id=f"BOT-{self.bot_id}")
+            if not self._fix_reader or not self._fix_writer:
+                raise RuntimeError("FIX connection is not initialized. Call connect() first.")
+            msg = FIXAdapter.build_message(
+                payload,
+                sender_comp_id=f"BOT-{self.bot_id}",
+                seq_num=self._fix_seq_num,
+            )
+            self._fix_seq_num += 1
             self._fix_writer.write(msg.encode())
             await self._fix_writer.drain()
-            # Simple mock response since FIX is asynchronous
-            return {"status": "ok", "latency_ns": 0}
+            response = await self._read_fix_message()
+            return FIXAdapter.parse_message(response)
             
         if endpoint.startswith("DELETE"):
             return await self._delete(endpoint.split(" ", 1)[1])
         return await self._post(endpoint, json=payload)
+
+    async def _read_fix_message(self) -> str:
+        if not self._fix_reader:
+            raise RuntimeError("FIX connection is not initialized. Call connect() first.")
+
+        message = bytearray()
+        while True:
+            tag = await asyncio.wait_for(
+                self._fix_reader.readuntil(b"\x01"),
+                timeout=_TIMEOUT_SECONDS,
+            )
+            message.extend(tag)
+            if tag.startswith(b"10="):
+                return message.decode()
 
     async def send_limit_order(
         self, side: str, price: float, qty: int

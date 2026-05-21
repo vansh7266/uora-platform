@@ -10,18 +10,20 @@ spec:
       containers:
       - name: bot-fleet
         image: uora-bot-fleet:latest
-        command: ["python", "uora/bot_fleet/run.py"]
+        command: ["python", "-m", "uora.bot_fleet.run"]
         env:
+        - name: SUBMISSION_ID
+          value: "00000000-0000-0000-0000-000000000000" # Replaced by controller at runtime
+        - name: SUBMISSION_SERVICE
+          value: "sub-00000000-0000-0000-0000-000000000000" # Replaced by controller at runtime
         - name: TARGET_URL
-          value: "http://uora-submission-svc.uora.svc.cluster.local:8000"
+          value: "http://$(SUBMISSION_SERVICE).uora.svc.cluster.local:8080"
         - name: WORKER_COUNT
           value: "100"
         - name: DURATION_SEC
           value: "30"
         - name: SCENARIO_FILE
           value: "data/lobster/sample_actions.json"
-        - name: SUBMISSION_ID
-          value: "00000000-0000-0000-0000-000000000000" # Replaced by controller at runtime
         resources:
           requests:
             cpu: "2"

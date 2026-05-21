@@ -5,6 +5,16 @@ metadata:
   name: uora-builder
   namespace: uora
 ---
+# --- Shared Runtime Secrets (override these values outside local clusters) ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: uora-builder-secrets
+  namespace: uora
+type: Opaque
+stringData:
+  redis-password: uora12345
+---
 # --- Role for Builder (minimal permissions) ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -14,7 +24,10 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get"]
@@ -59,15 +72,20 @@ spec:
       runtimeClassName: gvisor
       securityContext:
         runAsNonRoot: true
-        readOnlyRootFilesystem: true
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: uora-submission
         image: uora-submission:latest # Replace with ECR/registry URI
         imagePullPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
         ports:
         - containerPort: 8000
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             cpu: "1"
@@ -78,6 +96,11 @@ spec:
         env:
         - name: WORKERS
           value: "4"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: uora-builder-secrets
+              key: redis-password
         livenessProbe:
           httpGet:
             path: /health
@@ -94,6 +117,9 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
+      volumes:
+      - name: tmp
+        emptyDir: {}
 ---
 # --- Submission Service ---
 apiVersion: v1
@@ -132,15 +158,20 @@ spec:
       runtimeClassName: gvisor
       securityContext:
         runAsNonRoot: true
-        readOnlyRootFilesystem: true
         seccompProfile:
           type: RuntimeDefault
       containers:
       - name: uora-builder
         image: uora-builder:latest # Replace with ECR/registry URI
         imagePullPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
         ports:
         - containerPort: 8081
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             cpu: "1"
@@ -157,6 +188,11 @@ spec:
           value: "redis"
         - name: REDIS_PORT
           value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: uora-builder-secrets
+              key: redis-password
         livenessProbe:
           exec:
             command:
@@ -177,6 +213,9 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
+      volumes:
+      - name: tmp
+        emptyDir: {}
 ---
 # --- Builder Service ---
 apiVersion: v1

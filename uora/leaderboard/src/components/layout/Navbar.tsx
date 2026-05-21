@@ -1,25 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Shield,
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { UoraLogo } from "@/components/ui/UoraLogo";
 
 const navLinks = [
-  { href: "/", label: "Home", icon: Shield },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
+
+function getInitials(name: string, email: string) {
+  const source = name.trim() || email.split("@")[0] || "U";
+  return source
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
 
 export function Navbar() {
   const pathname = usePathname();
@@ -28,19 +35,15 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-uora-border bg-uora-bg/80 backdrop-blur-xl">
-      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-[#223047] bg-[#070b11]/96 backdrop-blur-xl">
+      <div className="mx-auto max-w-[1680px] px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="relative">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-uora-cyan to-uora-blue flex items-center justify-center">
-                <span className="text-white font-bold text-sm font-mono">U</span>
-              </div>
-              <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-uora-cyan to-uora-blue opacity-0 group-hover:opacity-50 blur-md transition-opacity" />
-            </div>
-            <span className="text-lg font-bold tracking-wider font-mono">
-              UORA
+          <Link href="/" className="group min-w-0">
+            <span className="sm:hidden">
+              <UoraLogo size="sm" showWordmark={false} />
+            </span>
+            <span className="hidden sm:block">
+              <UoraLogo size="sm" />
             </span>
           </Link>
 
@@ -56,7 +59,7 @@ export function Navbar() {
                     "relative px-4 py-2 rounded-lg text-sm font-medium transition-colors",
                     isActive
                       ? "text-uora-cyan"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-uora-elevated"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-[#101722]"
                   )}
                 >
                   <div className="flex items-center gap-2">
@@ -78,7 +81,7 @@ export function Navbar() {
           {/* Right Section */}
           <div className="flex items-center gap-3">
             {/* Connection Status */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-uora-surface border border-uora-border">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#101823] border border-[#2a3a50]">
               <div
                 className={cn(
                   "w-2 h-2 rounded-full",
@@ -95,15 +98,11 @@ export function Navbar() {
             {/* User Section */}
             {isAuthenticated && user ? (
               <div className="flex items-center gap-3">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-uora-surface border border-uora-border">
-                  <Image
-                    src={user.avatar}
-                    alt={user.name}
-                    width={20}
-                    height={20}
-                    className="w-5 h-5 rounded-full"
-                  />
-                  <span className="text-xs text-slate-300">{user.name}</span>
+                <div className="hidden sm:flex items-center gap-2 rounded-lg border border-[#2a3a50] bg-[#101823] px-3 py-1.5">
+                  <div className="grid h-6 w-6 place-items-center rounded-md bg-uora-cyan/12 text-[10px] font-bold text-uora-cyan ring-1 ring-uora-cyan/30">
+                    {getInitials(user.name, user.email)}
+                  </div>
+                  <span className="max-w-32 truncate text-xs text-slate-200">{user.name}</span>
                 </div>
                 <button
                   onClick={logout}
@@ -116,7 +115,7 @@ export function Navbar() {
             ) : (
               <Link
                 href="/auth"
-                className="px-4 py-2 rounded-lg bg-uora-cyan/10 border border-uora-cyan/20 text-uora-cyan text-sm font-medium hover:bg-uora-cyan/20 transition-colors"
+                className="hidden sm:inline-flex px-4 py-2 rounded-lg bg-uora-cyan/12 border border-uora-cyan/30 text-uora-cyan text-sm font-medium hover:bg-uora-cyan/20 transition-colors"
               >
                 Sign In
               </Link>
@@ -125,7 +124,8 @@ export function Navbar() {
             {/* Mobile Menu Toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-uora-elevated transition-colors"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-uora-cyan/35 bg-uora-cyan/10 text-uora-cyan shadow-[0_0_18px_rgba(6,182,212,0.2)] transition-colors hover:bg-uora-cyan/20 md:hidden"
+              aria-label="Open navigation"
             >
               {mobileMenuOpen ? (
                 <X className="w-5 h-5" />
@@ -166,6 +166,15 @@ export function Navbar() {
                   </Link>
                 );
               })}
+              {!isAuthenticated && (
+                <Link
+                  href="/auth"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-uora-cyan bg-uora-cyan/10 border border-uora-cyan/20"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
           </motion.div>
         )}

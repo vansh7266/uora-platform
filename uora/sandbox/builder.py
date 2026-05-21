@@ -127,6 +127,9 @@ kind: Pod
 metadata:
   name: {pod_name}
   namespace: {namespace}
+  labels:
+    app.kubernetes.io/name: uora-contestant-engine
+    uora.io/submission-id: "{submission_id}"
   annotations:
     sidecar.envoy.uora/inject: "true"
 spec:
@@ -169,6 +172,23 @@ spec:
       medium: Memory
       sizeLimit: "64Mi"
   restartPolicy: Never
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {pod_name}
+  namespace: {namespace}
+  labels:
+    app.kubernetes.io/name: uora-contestant-engine
+    uora.io/submission-id: "{submission_id}"
+spec:
+  type: ClusterIP
+  selector:
+    uora.io/submission-id: "{submission_id}"
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
 """
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -280,6 +300,8 @@ class SandboxBuilder:
         error: str | None = None,
         image: str | None = None,
         pod_name: str | None = None,
+        service_name: str | None = None,
+        target_url: str | None = None,
     ) -> None:
         """Write current build status to the Redis hash for this submission."""
         assert self._redis is not None, "Redis not initialized"
@@ -294,6 +316,10 @@ class SandboxBuilder:
             fields["image"] = image
         if pod_name is not None:
             fields["pod_name"] = pod_name
+        if service_name is not None:
+            fields["service_name"] = service_name
+        if target_url is not None:
+            fields["target_url"] = target_url
 
         # Timestamped milestone
         milestone_key = f"{status}_at"
@@ -463,7 +489,7 @@ class SandboxBuilder:
         submission_id: str,
         image_tag: str,
     ) -> str:
-        """Deploy a Pod for the contestant's submission with hardening.
+        """Deploy a Pod and stable Service for the contestant's submission.
 
         Returns the Pod name.
         """
@@ -495,7 +521,7 @@ class SandboxBuilder:
                 f"kubectl apply failed (rc={proc.returncode}):\n{apply_log}"
             )
 
-        logger.info("Deployed Pod %s", pod_name)
+        logger.info("Deployed Pod and Service %s", pod_name)
         return pod_name
 
     # ── Single-job pipeline ─────────────────────────────────────────────
@@ -542,8 +568,14 @@ class SandboxBuilder:
 
             # Deploy
             pod_name = await self._deploy_pod(submission_id, image_tag)
+            target_url = f"http://{pod_name}.{K8S_NAMESPACE}.svc.cluster.local:8080"
             await self._update_status(
-                submission_id, "deployed", image=image_tag, pod_name=pod_name
+                submission_id,
+                "deployed",
+                image=image_tag,
+                pod_name=pod_name,
+                service_name=pod_name,
+                target_url=target_url,
             )
             # Write base resource penalty to Redis so scoring engine can read it
             await self._redis.set(f"resources:{submission_id}", "1.0", ex=86400)

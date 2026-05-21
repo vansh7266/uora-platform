@@ -136,13 +136,28 @@ class MLAnomalyDetector:
 
         # sklearn returns: 1 = normal, -1 = anomaly
         raw_pred = self.model.predict(X)[0]
-        raw_score = self.model.score_samples(X)[0]  # negative = more anomalous
+        decision_score = self.model.decision_function(X)[0]  # positive = normal, negative = anomalous
 
-        # Normalize score to 0-1 (1 = definitely anomaly)
-        anomaly_score = 1.0 - (raw_score + 0.5)  # heuristic normalization
+        # Normalize score to 0-1 where 1 = definitely anomalous.
+        # The logistic transform keeps normal points low instead of reporting
+        # scary-looking scores for clean submissions.
+        anomaly_score = 1.0 / (1.0 + math.exp(decision_score * 20.0))
         anomaly_score = max(0.0, min(1.0, anomaly_score))
 
-        is_anomaly = raw_pred == -1 and anomaly_score > 0.8
+        rule_triggered = (
+            features.pattern_correlation > 0.95
+            or (0 < features.latency_entropy < 1e6)
+            or abs(features.latency_trend_slope) > 0.01
+            or features.error_rate > 0.1
+            or features.p99_to_p50_ratio > 10.0
+            or features.volume_conservation_delta > 100
+            or features.state_transition_ged > 0.5
+            or features.throughput_variance > 1e10
+        )
+        if rule_triggered:
+            anomaly_score = max(anomaly_score, 0.85)
+
+        is_anomaly = raw_pred == -1 or rule_triggered
         reason = self._explain_anomaly(features, anomaly_score)
         confidence = anomaly_score if is_anomaly else 1.0 - anomaly_score
 
@@ -310,6 +325,7 @@ def test_normal_engine() -> None:
 
     result = detector.detect(features)
     assert not result.is_anomaly, f"Normal engine flagged incorrectly: {result.reason}"
+    assert result.anomaly_score < 0.5, f"Normal engine score too high: {result.anomaly_score}"
     print(f"✓ Test 1: Normal engine — Anomaly score: {result.anomaly_score:.2f} (clean)")
 
 

@@ -1,166 +1,85 @@
 "use client";
 
-import { useMemo, useEffect, useState } from "react";
-import ReactECharts from "echarts-for-react";
-import "echarts-liquidfill";
 import { motion } from "framer-motion";
-import { Trophy, Sparkles } from "lucide-react";
+import { Gauge, Trophy } from "lucide-react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
-import { cn } from "@/lib/utils";
 
-/**
- * ScoreRevealLiquidFill — Animated liquid-fill gauge that reveals
- * the composite score with a satisfying fill animation.
- * Uses ECharts liquidFill series for the water-level effect.
- */
 export function ScoreRevealLiquidFill() {
   const { entries } = useLeaderboardStore();
-  const [animatedScore, setAnimatedScore] = useState(0);
-
-  // Get top team score
-  const topScore = entries.length > 0
-    ? Math.max(...entries.map((e) => e.composite_score))
-    : 0;
 
   const topTeam = entries.length > 0
-    ? entries.reduce((best, e) => (e.composite_score > best.composite_score ? e : best), entries[0])
+    ? entries.reduce((best, entry) => (entry.composite_score > best.composite_score ? entry : best), entries[0])
     : null;
+  const score = topTeam?.composite_score ?? 0;
+  const scoreWidth = Math.max(0, Math.min(100, score));
 
-  // Animate score counting up
-  useEffect(() => {
-    if (topScore === 0) {
-      setAnimatedScore(0);
-      return;
-    }
-
-    let current = 0;
-    const duration = 1500;
-    const steps = 60;
-    const increment = topScore / steps;
-    const interval = duration / steps;
-
-    const timer = setInterval(() => {
-      current += increment;
-      if (current >= topScore) {
-        setAnimatedScore(topScore);
-        clearInterval(timer);
-      } else {
-        setAnimatedScore(current);
-      }
-    }, interval);
-
-    return () => clearInterval(timer);
-  }, [topScore]);
-
-  const scoreNormalized = topScore / 100; // 0-1 scale
-
-  const option = useMemo(() => {
-    // Color based on score tier
-    const fillColor = topScore >= 90 ? "#06B6D4" : topScore >= 70 ? "#8B5CF6" : topScore >= 50 ? "#F59E0B" : "#64748B";
-
-    return {
-      backgroundColor: "transparent",
-      series: [
-        {
-          type: "liquidFill",
-          radius: "78%",
-          center: ["50%", "50%"],
-          data: [scoreNormalized, scoreNormalized - 0.02, scoreNormalized - 0.04],
-          amplitude: 6,
-          waveLength: "80%",
-          phase: 0,
-          period: 3000,
-          color: [fillColor, fillColor, fillColor],
-          opacity: [0.8, 0.5, 0.3],
-          outline: {
-            show: true,
-            borderDistance: 4,
-            itemStyle: {
-              borderColor: fillColor,
-              borderWidth: 2,
-              shadowBlur: 12,
-              shadowColor: `${fillColor}33`,
-            },
-          },
-          backgroundStyle: {
-            color: "#0F172A",
-            borderColor: "#1E293B",
-            borderWidth: 1,
-          },
-          label: {
-            show: true,
-            formatter: () => `${animatedScore.toFixed(1)}`,
-            fontSize: 42,
-            fontFamily: "JetBrains Mono, monospace",
-            fontWeight: "bold",
-            color: "#E2E8F0",
-            insideColor: "#E2E8F0",
-          },
-          emphasis: {
-            itemStyle: {
-              opacity: 0.9,
-            },
-          },
-        },
-      ],
-    };
-  }, [scoreNormalized, animatedScore, topScore]);
-
-  // Score tier label
-  const tierLabel = topScore >= 90 ? "ELITE" : topScore >= 70 ? "ADVANCED" : topScore >= 50 ? "COMPETENT" : topScore > 0 ? "DEVELOPING" : "NO DATA";
+  const tier =
+    score >= 90 ? "Elite" :
+    score >= 75 ? "Advanced" :
+    score >= 50 ? "Stable" :
+    score > 0 ? "Developing" :
+    "No Runs";
 
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-uora-border flex items-center justify-between">
+    <div className="overflow-hidden rounded-lg border border-[#253449] bg-[#101823] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="flex items-center justify-between border-b border-[#223047] px-5 py-4">
         <div className="flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-uora-warning" />
-          <h3 className="text-sm font-semibold">Score Reveal</h3>
+          <Trophy className="h-4 w-4 text-uora-warning" />
+          <h3 className="text-sm font-semibold text-slate-100">Composite Score</h3>
         </div>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 1.5, duration: 0.5 }}
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border",
-            topScore >= 90
-              ? "bg-uora-cyan/10 text-uora-cyan border-uora-cyan/20"
-              : topScore >= 70
-              ? "bg-uora-purple/10 text-uora-purple border-uora-purple/20"
-              : "bg-uora-warning/10 text-uora-warning border-uora-warning/20"
-          )}
-        >
-          <Sparkles className="w-3 h-3" />
-          {tierLabel}
-        </motion.div>
+        <div className="rounded-md border border-[#2a3a50] bg-[#0b1119] px-2.5 py-1 font-mono text-[11px] text-slate-300">
+          {tier}
+        </div>
       </div>
 
-      <div className="p-2">
-        <ReactECharts
-          option={option}
-          style={{ height: "280px", width: "100%" }}
-          opts={{ renderer: "canvas" }}
-          notMerge={true}
-          lazyUpdate={true}
-        />
-      </div>
-
-      {/* Team info */}
-      {topTeam && (
-        <div className="px-5 pb-4 flex items-center justify-between">
+      <div className="p-5">
+        <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="text-xs text-slate-500">Top Team</div>
-            <div className="text-sm font-mono font-bold text-slate-200">
-              {topTeam.team || topTeam.submission_id.slice(0, 12)}
+            <div className="font-mono text-xs uppercase tracking-[0.14em] text-slate-500">
+              Leading Submission
+            </div>
+            <div className="mt-2 max-w-52 truncate text-lg font-semibold text-white">
+              {topTeam?.team || topTeam?.submission_id || "Awaiting benchmark"}
             </div>
           </div>
           <div className="text-right">
-            <div className="text-xs text-slate-500">P99</div>
-            <div className="text-sm font-mono font-bold text-uora-warning">
-              {topTeam.p99_latency_ms.toFixed(2)}ms
+            <div className="font-mono text-5xl font-bold tabular-nums text-uora-cyan">
+              {score ? score.toFixed(1) : "0.0"}
             </div>
+            <div className="mt-1 text-xs text-slate-500">out of 100</div>
           </div>
         </div>
-      )}
+
+        <div className="mt-6 h-3 overflow-hidden rounded-full bg-[#071018] ring-1 ring-[#243449]">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${scoreWidth}%` }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="h-full rounded-full bg-gradient-to-r from-uora-success via-uora-cyan to-uora-blue"
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-3 gap-3">
+          <Metric label="P99" value={topTeam ? `${topTeam.p99_latency_ms.toFixed(2)}ms` : "---"} />
+          <Metric label="TPS" value={topTeam ? topTeam.throughput.toLocaleString() : "---"} />
+          <Metric label="Correct" value={topTeam ? `${(topTeam.correctness_rate * 100).toFixed(1)}%` : "---"} />
+        </div>
+
+        <div className="mt-5 flex items-center gap-2 rounded-lg border border-[#253449] bg-[#0b1119] px-4 py-3 text-sm text-slate-400">
+          <Gauge className="h-4 w-4 text-uora-cyan" />
+          Composite ranking rewards speed, tail stability, correctness, and anomaly resistance.
+        </div>
+      </div>
     </div>
   );
 }
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[#253449] bg-[#0b1119] p-3">
+      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-2 truncate font-mono text-sm font-semibold text-slate-100">{value}</div>
+    </div>
+  );
+}
+

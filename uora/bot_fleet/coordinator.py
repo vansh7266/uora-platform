@@ -41,20 +41,25 @@ class BotCoordinator:
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
-    async def start(self, base_url: str, worker_count: int, submission_id: str = "dev") -> None:
+    async def start(
+        self,
+        base_url: str,
+        worker_count: int,
+        submission_id: str = "dev",
+        protocol: str = "REST",
+    ) -> None:
         """Spawn *worker_count* TradingBots and connect them all in parallel."""
         self._worker_count = worker_count
-        self._bots = [TradingBot(submission_id=submission_id, bot_id=str(i)) for i in range(worker_count)]
+        self._bots = [
+            TradingBot(submission_id=submission_id, bot_id=str(i), protocol=protocol)
+            for i in range(worker_count)
+        ]
         await asyncio.gather(*(bot.connect(base_url) for bot in self._bots))
         logger.info("✓ %d workers connected to %s", worker_count, base_url)
 
     async def stop(self) -> None:
-        """Close every bot's aiohttp session."""
-        await asyncio.gather(*(
-            bot.session.close()
-            for bot in self._bots
-            if bot.session and not bot.session.closed
-        ))
+        """Close every bot connection."""
+        await asyncio.gather(*(bot.close() for bot in self._bots))
         logger.info("✓ All sessions closed")
 
     # ── Scenario ───────────────────────────────────────────────────────────────

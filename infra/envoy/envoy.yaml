@@ -27,6 +27,12 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
                       log_format:
                         text_format: "%START_TIME% %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %RESPONSE_CODE% %DURATION% %BYTES_RECEIVED% %BYTES_SENT% %REQ(X-REQUEST-ID)%\n"
+                  - name: envoy.access_loggers.file
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                      path: /var/log/uora/access.log
+                      log_format:
+                        text_format: "%START_TIME% %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %RESPONSE_CODE% %DURATION% %BYTES_RECEIVED% %BYTES_SENT% %REQ(X-REQUEST-ID)%\n"
 
                 http_filters:
                   # ── Lua filter: inject nanosecond timing headers ──────────────
@@ -35,9 +41,8 @@ static_resources:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                       inline_code: |
                         function envoy_on_request(request_handle)
-                          -- ngx.now() returns a float with millisecond resolution.
-                          -- Multiply by 1e6 to convert ms -> ns for downstream consumers.
-                          local start_ns = math.floor(ngx.now() * 1e6)
+                          -- Envoy Lua exposes timestamp() in milliseconds since epoch.
+                          local start_ns = math.floor(request_handle:timestamp() * 1000000)
                           request_handle:headers():add("x-uora-start-time", tostring(start_ns))
 
                           -- Store in stream dynamic metadata so response phase can read it
@@ -49,7 +54,7 @@ static_resources:
                         function envoy_on_response(response_handle)
                           local meta = response_handle:streamInfo():dynamicMetadata():get("uora.lua")
                           if meta and meta["start_time_ns"] then
-                            local end_ns = math.floor(ngx.now() * 1e6)
+                            local end_ns = math.floor(response_handle:timestamp() * 1000000)
                             local latency_ns = end_ns - meta["start_time_ns"]
                             response_handle:headers():add("x-uora-latency-ns", tostring(latency_ns))
                           end
@@ -86,8 +91,6 @@ static_resources:
       connect_timeout: 5s
       type: LOGICAL_DNS
       dns_lookup_family: V4_ONLY
-      # Enable HTTP/2 to upstream if contestant supports h2c
-      http2_protocol_options: {}
       load_assignment:
         cluster_name: contestant_backend
         endpoints:

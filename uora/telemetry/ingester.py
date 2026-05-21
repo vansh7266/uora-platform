@@ -12,13 +12,17 @@ import os
 import re
 import time
 from collections import deque
+from contextlib import suppress
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 try:
     import asyncpg
 except ImportError:  # pragma: no cover - exercised in minimal local envs
     asyncpg = None
+
+from uora.telemetry.migrations import ensure_timescale_schema
 
 logger = logging.getLogger("uora.telemetry.ingester")
 
@@ -77,10 +81,13 @@ class TelemetryIngester:
             min_size=2,
             max_size=10,
         )
+        async with self._pool.acquire() as conn:
+            await ensure_timescale_schema(conn)
         print(f"✓ Connected to TimescaleDB at {self.db_host}:{self.db_port}")
 
     async def stop(self) -> None:
         """Flush remaining buffer and close pool."""
+        self._running = False
         if self._buffer:
             await self._flush()
         if self._pool:
@@ -189,18 +196,19 @@ class TelemetryIngester:
                     self._buffer.insert(0, r)
 
     def _extract_submission_id(self, request_id: str) -> Optional[str]:
-        """Extract submission_id from request_id format: sub-<uuid>-bot-<id>"""
-        parts = request_id.split("-")
-        if len(parts) >= 2 and parts[0] == "sub":
-            return "-".join(parts[1:6])  # UUID is 5 hyphen-separated groups
+        """Extract submission_id from request_id format: sub-<submission>-bot-<id>-req-<id>."""
+        if request_id.startswith("sub-") and "-bot-" in request_id:
+            submission_id, _ = request_id[4:].rsplit("-bot-", 1)
+            return submission_id or None
         return None
 
     def _extract_bot_id(self, request_id: str) -> Optional[str]:
-        """Extract bot_id from request_id format: sub-<uuid>-bot-<id>"""
-        parts = request_id.split("-")
-        if "bot" in parts:
-            idx = parts.index("bot")
-            return parts[idx + 1] if idx + 1 < len(parts) else None
+        """Extract bot_id from request_id format: sub-<submission>-bot-<id>-req-<id>."""
+        if request_id.startswith("sub-") and "-bot-" in request_id:
+            _, suffix = request_id[4:].rsplit("-bot-", 1)
+            if "-req-" in suffix:
+                suffix = suffix.split("-req-", 1)[0]
+            return suffix.split("-", 1)[0] or None
         return None
 
     @staticmethod
@@ -215,6 +223,23 @@ class TelemetryIngester:
             if self._buffer:
                 await self._flush()
 
+    async def tail_access_log(self, path: str, *, from_start: bool = False) -> None:
+        """Tail an Envoy access log file and ingest lines as they are written."""
+        log_path = Path(path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.touch(exist_ok=True)
+
+        with log_path.open("r", encoding="utf-8") as handle:
+            if not from_start:
+                handle.seek(0, os.SEEK_END)
+
+            while self._running:
+                line = handle.readline()
+                if line:
+                    await self.ingest_log_line(line)
+                else:
+                    await asyncio.sleep(0.2)
+
 
 # ─── CLI / Test ──────────────────────────────────────────────────────────────
 
@@ -226,6 +251,23 @@ async def main():
         db_password=os.getenv("DB_PASSWORD", "uora12345"),
         db_name=os.getenv("DB_NAME", "uora_metrics"),
     )
+
+    access_log_path = os.getenv("ENVOY_ACCESS_LOG")
+    if os.getenv("DB_HOST") or access_log_path:
+        await ingester.start()
+        flush_task = asyncio.create_task(ingester.run_periodic_flush())
+        try:
+            if not access_log_path:
+                raise RuntimeError("ENVOY_ACCESS_LOG is required in daemon mode")
+            from_start = os.getenv("TAIL_FROM_START", "false").lower() in {"1", "true", "yes"}
+            print(f"✓ Tailing Envoy access log at {access_log_path}")
+            await ingester.tail_access_log(access_log_path, from_start=from_start)
+        finally:
+            flush_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await flush_task
+            await ingester.stop()
+        return
 
     # Test with sample Envoy log lines (parsed before DB connection)
     test_lines = [
@@ -269,6 +311,24 @@ def test_extract_submission_id_preserves_full_uuid():
     )
 
     assert submission_id == "550e8400-e29b-41d4-a716-446655440000"
+
+
+def test_extract_submission_id_handles_dev_ids():
+    ingester = TelemetryIngester()
+
+    request_id = "sub-dev-bot-0-req-a1b2c3d4"
+
+    assert ingester._extract_submission_id(request_id) == "dev"
+    assert ingester._extract_bot_id(request_id) == "0"
+
+
+def test_extract_submission_id_allows_bot_in_submission_name():
+    ingester = TelemetryIngester()
+
+    request_id = "sub-bot-test-bot-01-req-a1b2c3d4"
+
+    assert ingester._extract_submission_id(request_id) == "bot-test"
+    assert ingester._extract_bot_id(request_id) == "01"
 
 
 if __name__ == "__main__":

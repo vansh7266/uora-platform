@@ -16,11 +16,18 @@ from typing import Optional, Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
 import aioboto3
 import asyncpg
 import redis.asyncio as redis
 import httpx
 from jose import jwt, JWTError
+import bcrypt
+
+try:
+    from uora.telemetry.migrations import ensure_timescale_schema
+except ImportError:  # pragma: no cover - only used by minimal source-only deployments
+    ensure_timescale_schema = None
 
 # --- Logging ---
 logger = logging.getLogger("uora.submission")
@@ -45,6 +52,13 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/au
 # --- API Token Auth ---
 UORA_API_TOKEN = os.getenv("UORA_API_TOKEN", "")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "change-this-to-a-random-secret")
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "86400"))
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in {"1", "true", "yes"}
+if (
+    os.getenv("ENVIRONMENT", "development").lower() in {"prod", "production"}
+    and SESSION_SECRET == "change-this-to-a-random-secret"
+):
+    raise RuntimeError("SESSION_SECRET must be set to a strong random value in production")
 
 # --- Rate Limiting ---
 RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", 5))        # submissions per window
@@ -52,13 +66,48 @@ RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", 3600))  # seconds (1 hour
 
 # --- Redis Connection Pool ---
 redis_pool: Optional[redis.Redis] = None
+timescale_pool: Optional[asyncpg.Pool] = None
+
+
+def parse_cors_origins() -> list[str]:
+    """Use explicit browser origins when credentials are enabled."""
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        if environment in {"prod", "production"}:
+            raise RuntimeError("CORS_ORIGINS='*' is not allowed when ENVIRONMENT=production")
+        logger.warning("CORS_ORIGINS='*' with credentials is unsafe; using local dashboard origins")
+        return ["http://localhost:3000", "http://127.0.0.1:3000"]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def build_session_token(payload: dict[str, Any]) -> str:
+    now = int(datetime.now(timezone.utc).timestamp())
+    session_payload = {
+        **payload,
+        "iat": now,
+        "exp": now + SESSION_TTL_SECONDS,
+    }
+    return jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+
+
+def set_session_cookie(response: JSONResponse, token: str) -> None:
+    response.set_cookie(
+        key="uora_session",
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+    )
 
 
 # --- Lifespan (replaces deprecated @app.on_event) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global redis_pool
+    global redis_pool, timescale_pool
     redis_pool = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT,
         password=REDIS_PASSWORD or None,
@@ -76,7 +125,12 @@ async def lifespan(app: FastAPI):
             min_size=1,
             max_size=5,
         )
+        if ensure_timescale_schema:
+            async with timescale_pool.acquire() as conn:
+                await ensure_timescale_schema(conn)
+        app.state.timescale_pool = timescale_pool
     except Exception as e:
+        timescale_pool = None
         logger.error("Failed to connect to TimescaleDB: %s", e)
     # Init MinIO bucket
     try:
@@ -97,6 +151,7 @@ async def lifespan(app: FastAPI):
         await redis_pool.close()
     if timescale_pool:
         await timescale_pool.close()
+        timescale_pool = None
 
 
 app = FastAPI(title="UORA Submission Service", version="2.0.0", lifespan=lifespan)
@@ -104,7 +159,7 @@ app = FastAPI(title="UORA Submission Service", version="2.0.0", lifespan=lifespa
 # --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=parse_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -163,7 +218,7 @@ async def require_auth(request: Request) -> dict:
     # Check session token (JWT from OAuth flow)
     try:
         payload = jwt.decode(token, SESSION_SECRET, algorithms=["HS256"])
-        return {"user": payload.get("email", "oauth_user"), "source": "oauth", "payload": payload}
+        return {"user": payload.get("email", "session_user"), "source": "session", "payload": payload}
     except JWTError:
         raise HTTPException(401, "Invalid or expired token")
 
@@ -241,15 +296,12 @@ async def auth_google_callback(code: str):
             raise HTTPException(400, "Failed to fetch user info")
         userinfo = userinfo_resp.json()
 
-    # Create session JWT
-    session_payload = {
+    session_token = build_session_token({
         "email": userinfo.get("email", ""),
         "name": userinfo.get("name", ""),
         "picture": userinfo.get("picture", ""),
         "sub": userinfo.get("id", ""),
-        "iat": int(datetime.now(timezone.utc).timestamp()),
-    }
-    session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+    })
 
     # Store session in Redis
     if redis_pool:
@@ -263,13 +315,7 @@ async def auth_google_callback(code: str):
             "name": userinfo.get("name", ""),
         },
     })
-    response.set_cookie(
-        key="uora_session",
-        value=session_token,
-        httponly=True,
-        samesite="lax",
-        max_age=86400,
-    )
+    set_session_cookie(response, session_token)
     return response
 
 
@@ -286,53 +332,42 @@ async def auth_me(auth_data: dict = Depends(require_auth)):
 
 # --- Email / Password Auth ---
 
-try:
-    import bcrypt
-    _HAS_BCRYPT = True
-except ImportError:
-    import hashlib as _hashlib
-    _HAS_BCRYPT = False
-    logger.warning("bcrypt not installed — using SHA-256 password hashing (dev only)")
-
-
 def _hash_password(password: str) -> str:
-    if _HAS_BCRYPT:
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    return _hashlib.sha256(password.encode()).hexdigest()
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def _verify_password(password: str, hashed: str) -> bool:
-    if _HAS_BCRYPT:
-        return bcrypt.checkpw(password.encode(), hashed.encode())
-    return _hashlib.sha256(password.encode()).hexdigest() == hashed
-
-
-from pydantic import BaseModel, EmailStr as _EmailStr
+    if not hashed:
+        return False
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
 class RegisterRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     name: str
     team: str = "Solo"
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 
 @app.post("/auth/register")
 async def auth_register(body: RegisterRequest):
     """Register a new contestant with email + password."""
-    if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+    if len(body.password) < 10:
+        raise HTTPException(400, "Password must be at least 10 characters")
     if not body.name.strip():
         raise HTTPException(400, "Name is required")
+    if not redis_pool:
+        raise HTTPException(503, "Authentication service temporarily unavailable")
 
-    user_key = f"user:{body.email}"
+    email = str(body.email).strip().lower()
+    user_key = f"user:{email}"
 
-    if redis_pool:
+    try:
         existing = await redis_pool.hget(user_key, "email")
         if existing:
             raise HTTPException(409, "Email already registered")
@@ -340,46 +375,49 @@ async def auth_register(body: RegisterRequest):
         user_id = str(uuid.uuid4())
         await redis_pool.hset(user_key, mapping={
             "id": user_id,
-            "email": body.email,
+            "email": email,
             "name": body.name.strip(),
             "team": body.team.strip() or "Solo",
             "password_hash": _hash_password(body.password),
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
-        # Create session JWT
-        session_payload = {
+        session_token = build_session_token({
             "sub": user_id,
-            "email": body.email,
+            "email": email,
             "name": body.name.strip(),
             "team": body.team.strip() or "Solo",
-            "iat": int(datetime.now(timezone.utc).timestamp()),
-        }
-        session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+        })
 
         response = JSONResponse(status_code=201, content={
             "message": "Account created",
             "token": session_token,
             "user": {
                 "id": user_id,
-                "email": body.email,
+                "email": email,
                 "name": body.name.strip(),
                 "team": body.team.strip() or "Solo",
             },
         })
-        response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+        set_session_cookie(response, session_token)
         return response
-
-    # No Redis — fail securely
-    raise HTTPException(503, "Authentication service temporarily unavailable")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Registration store error for %s: %s", email, exc)
+        raise HTTPException(503, "Authentication service temporarily unavailable")
 
 
 @app.post("/auth/login")
 async def auth_login(body: LoginRequest):
     """Login with email + password."""
-    user_key = f"user:{body.email}"
+    if not redis_pool:
+        raise HTTPException(503, "Authentication service temporarily unavailable")
 
-    if redis_pool:
+    email = str(body.email).strip().lower()
+    user_key = f"user:{email}"
+
+    try:
         user_data = await redis_pool.hgetall(user_key)
         if not user_data:
             raise HTTPException(401, "Invalid email or password")
@@ -387,34 +425,34 @@ async def auth_login(body: LoginRequest):
         if not _verify_password(body.password, user_data.get("password_hash", "")):
             raise HTTPException(401, "Invalid email or password")
 
-        session_payload = {
+        session_token = build_session_token({
             "sub": user_data.get("id", ""),
-            "email": body.email,
+            "email": email,
             "name": user_data.get("name", ""),
             "team": user_data.get("team", "Solo"),
-            "iat": int(datetime.now(timezone.utc).timestamp()),
-        }
-        session_token = jwt.encode(session_payload, SESSION_SECRET, algorithm="HS256")
+        })
 
         response = JSONResponse(content={
             "message": "Login successful",
             "token": session_token,
             "user": {
                 "id": user_data.get("id", ""),
-                "email": body.email,
+                "email": email,
                 "name": user_data.get("name", ""),
                 "team": user_data.get("team", "Solo"),
             },
         })
-        response.set_cookie("uora_session", session_token, httponly=True, samesite="lax", max_age=86400)
+        set_session_cookie(response, session_token)
         return response
-
-    # No Redis — fail securely
-    raise HTTPException(503, "Authentication service temporarily unavailable")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Login store error for %s: %s", email, exc)
+        raise HTTPException(503, "Authentication service temporarily unavailable")
 
 
 # --- Build Queue Task ---
-async def enqueue_build(submission_id: str, s3_key: str, language: str):
+async def enqueue_build(submission_id: str, s3_key: str, language: str, team: Optional[str] = None):
     """Push build job to Redis Streams for the sandbox worker to pick up."""
     if not redis_pool:
         raise RuntimeError("Redis not connected")
@@ -429,12 +467,15 @@ async def enqueue_build(submission_id: str, s3_key: str, language: str):
     }
 
     await redis_pool.xadd("build_queue", job)
-    await redis_pool.hset(f"submission:{submission_id}", mapping={
+    submission_metadata = {
         "status": "queued",
         "s3_key": s3_key,
         "language": language,
         "queued_at": job["queued_at"],
-    })
+    }
+    if team:
+        submission_metadata["team"] = team
+    await redis_pool.hset(f"submission:{submission_id}", mapping=submission_metadata)
 
 
 # --- Endpoints ---
@@ -468,8 +509,14 @@ async def submit_code(
     # Auto-detect language
     if language == "auto":
         lang_map = {"cpp": "cpp", "cc": "cpp", "c++": "cpp",
-                    "rs": "rust", "go": "go", "py": "python"}
+                    "cxx": "cpp", "rs": "rust", "go": "go"}
         language = lang_map.get(ext, "unknown")
+    else:
+        language = {"c++": "cpp"}.get(language.lower(), language.lower())
+
+    supported_languages = {"cpp", "rust", "go"}
+    if language not in supported_languages:
+        raise HTTPException(400, f"Unsupported language '{language}'. Supported: cpp, rust, go")
 
     s3_key = f"submissions/{submission_id}/source.{ext}"
 
@@ -495,7 +542,8 @@ async def submit_code(
         raise HTTPException(500, "Failed to store submission. Please try again.")
 
     # 4. Queue build
-    await enqueue_build(submission_id, s3_key, language)
+    team = auth_data.get("payload", {}).get("team")
+    await enqueue_build(submission_id, s3_key, language, team=team)
 
     return JSONResponse(status_code=202, content={
         "submission_id": submission_id,
@@ -552,59 +600,94 @@ async def list_submissions(
 
 @app.get("/api/v1/leaderboard")
 async def stream_leaderboard(request: Request):
-    """SSE endpoint for real-time leaderboard updates from TimescaleDB."""
+    """SSE endpoint for real-time leaderboard updates from Redis and TimescaleDB."""
+    async def fetch_leaderboard_entries() -> list[dict[str, Any]]:
+        if not timescale_pool:
+            return []
+
+        async with timescale_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                WITH latest_scores AS (
+                    SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate,
+                           ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) as rn
+                    FROM benchmark_scores
+                )
+                SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate
+                FROM latest_scores
+                WHERE rn = 1
+                ORDER BY composite_score DESC
+                LIMIT 10
+                """
+            )
+
+        entries: list[dict[str, Any]] = []
+        for rank, row in enumerate(rows, 1):
+            submission_id = str(row["submission_id"])
+            team_name = f"Team {submission_id[:8]}"
+            if redis_pool:
+                sub_data = await redis_pool.hgetall(f"submission:{submission_id}")
+                if sub_data and sub_data.get("team"):
+                    team_name = sub_data["team"]
+
+            p99_latency_ms = float(row["p99_latency_ns"] or 0) / 1_000_000
+            entries.append({
+                "rank": rank,
+                "submission_id": submission_id,
+                "team": team_name,
+                "composite_score": round(float(row["composite_score"] or 0), 2),
+                "throughput": round(float(row["throughput"] or 0), 0),
+                "p50_latency_ms": round(p99_latency_ms * 0.4, 2),
+                "p99_latency_ms": round(p99_latency_ms, 2),
+                "correctness_rate": round(float(row["correctness_rate"] or 0), 4),
+                "status": "completed",
+            })
+        return entries
+
     async def event_generator():
-        while True:
-            if await request.is_disconnected():
-                break
-            
-            if not timescale_pool:
-                await asyncio.sleep(5)
-                continue
-
+        pubsub = None
+        next_poll = 0.0
+        last_pubsub_event = 0.0
+        if redis_pool:
             try:
-                async with timescale_pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        """
-                        WITH latest_scores AS (
-                            SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate,
-                                   ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) as rn
-                            FROM benchmark_scores
-                        )
-                        SELECT submission_id, composite_score, p99_latency_ns, throughput, correctness_rate
-                        FROM latest_scores
-                        WHERE rn = 1
-                        ORDER BY composite_score DESC
-                        LIMIT 10
-                        """
-                    )
-                    
-                    leaderboard_data = []
-                    for rank, row in enumerate(rows, 1):
-                        team_name = f"Team {row['submission_id'][:8]}"
-                        if redis_pool:
-                            sub_data = await redis_pool.hgetall(f"submission:{row['submission_id']}")
-                            if sub_data and "team" in sub_data:
-                                team_name = sub_data["team"]
-                                
-                        leaderboard_data.append({
-                            "id": row["submission_id"],
-                            "rank": rank,
-                            "teamName": team_name,
-                            "compositeScore": round(row["composite_score"], 2) if row["composite_score"] else 0,
-                            "throughput": round(row["throughput"], 0) if row["throughput"] else 0,
-                            "latency": round(row["p99_latency_ns"] / 1_000_000, 2) if row["p99_latency_ns"] else 0,
-                            "correctness": round(row["correctness_rate"] * 100, 2) if row["correctness_rate"] else 0,
-                            "status": "online"
-                        })
-                    
-                    yield f"data: {json.dumps(leaderboard_data)}\\n\\n"
-            except Exception as e:
-                logger.error(f"Error fetching leaderboard: {e}")
-            
-            await asyncio.sleep(2)
+                pubsub = redis_pool.pubsub()
+                await pubsub.subscribe("uora:leaderboard:updates")
+            except Exception as exc:
+                logger.warning("Leaderboard Redis subscription unavailable: %s", exc)
+                pubsub = None
 
-    from fastapi.responses import StreamingResponse
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    if pubsub:
+                        message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                        if message and message.get("type") == "message":
+                            payload = json.loads(message["data"])
+                            if isinstance(payload, dict) and "type" in payload:
+                                last_pubsub_event = asyncio.get_running_loop().time()
+                                yield f"data: {json.dumps(payload)}\n\n"
+                                continue
+                    else:
+                        await asyncio.sleep(1)
+
+                    now = asyncio.get_running_loop().time()
+                    should_poll_db = not pubsub or last_pubsub_event == 0.0 or (now - last_pubsub_event) > 3.0
+                    if should_poll_db and now >= next_poll:
+                        entries = await fetch_leaderboard_entries()
+                        if entries or not pubsub:
+                            yield f"data: {json.dumps({'type': 'leaderboard', 'entries': entries})}\n\n"
+                        next_poll = now + 2.0
+                except Exception as exc:
+                    logger.error("Error streaming leaderboard: %s", exc)
+                    await asyncio.sleep(2)
+        finally:
+            if pubsub:
+                await pubsub.unsubscribe("uora:leaderboard:updates")
+                await pubsub.close()
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 

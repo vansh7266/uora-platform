@@ -47,6 +47,10 @@ class FIXAdapter:
             return cls._parse_new_order(tags)
         elif msg_type == "F":  # Order Cancel Request
             return cls._parse_cancel(tags)
+        elif msg_type == "8":  # Execution Report
+            return cls._parse_execution_report(tags)
+        elif msg_type == "9":  # Order Cancel Reject
+            return cls._parse_cancel_reject(tags)
         else:
             raise NotImplementedError(f"Unsupported FIX MsgType: {msg_type}")
 
@@ -91,6 +95,48 @@ class FIXAdapter:
         return {
             "type": "cancel",
             "order_id": tags.get("41", ""),  # OrigClOrdID
+        }
+
+    @classmethod
+    def _parse_execution_report(cls, tags: dict[str, str]) -> dict[str, Any]:
+        """Convert FIX ExecutionReport (35=8) to the UORA response shape."""
+        status_map = {
+            "0": "pending",
+            "1": "partial_fill",
+            "2": "filled",
+            "4": "cancelled",
+            "8": "rejected",
+        }
+        status = status_map.get(tags.get("39", ""), "unknown")
+        last_qty = int(float(tags.get("32", "0") or 0))
+        last_price = float(tags.get("31", "0") or 0)
+
+        fills = []
+        if last_qty > 0:
+            fills.append({
+                "fill_id": tags.get("17", ""),
+                "price": last_price,
+                "quantity": last_qty,
+            })
+
+        return {
+            "type": "execution_report",
+            "order_id": tags.get("11", tags.get("37", "")),
+            "status": status,
+            "filled_qty": int(float(tags.get("14", "0") or 0)),
+            "remaining_qty": int(float(tags.get("151", "0") or 0)),
+            "fills": fills,
+        }
+
+    @classmethod
+    def _parse_cancel_reject(cls, tags: dict[str, str]) -> dict[str, Any]:
+        """Convert FIX OrderCancelReject (35=9) to a failed cancel response."""
+        return {
+            "type": "cancel",
+            "order_id": tags.get("41", ""),
+            "status": "rejected",
+            "success": False,
+            "error": tags.get("58", "Cancel rejected"),
         }
 
     # ─── JSON to FIX (Egress) ────────────────────────────────────────────────
@@ -161,4 +207,3 @@ class FIXAdapter:
             "11": str(uuid.uuid4()),  # New ID for the cancel request itself
             "41": action.get("order_id", ""),  # OrigClOrdID (ID of order to cancel)
         }
-

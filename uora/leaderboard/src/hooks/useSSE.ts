@@ -7,6 +7,7 @@ export function useSSE(url: string = "/api/leaderboard") {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const connectRef = useRef<() => void>(() => {});
   const maxReconnectAttempts = 10;
 
   const {
@@ -42,7 +43,7 @@ export function useSSE(url: string = "/api/leaderboard") {
         );
         reconnectAttemptsRef.current += 1;
         reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
+          connectRef.current();
         }, delay);
       } else {
         setError("Connection lost. Please refresh the page.");
@@ -58,7 +59,7 @@ export function useSSE(url: string = "/api/leaderboard") {
             data.entries.map((e: Record<string, unknown>) => ({
               ...e,
               prevRank: e.prevRank ?? e.rank,
-              language: e.language ?? "C++",
+              language: e.language ?? "cpp",
               anomaly_score: e.anomaly_score ?? 0,
             }))
           );
@@ -71,7 +72,7 @@ export function useSSE(url: string = "/api/leaderboard") {
             throughput: data.throughput,
           });
 
-          // Simulate anomaly events based on metric spikes
+          // Derive a system anomaly event from observed metric spikes.
           if (data.p99 > 2.0) {
             addAnomaly({
               timestamp: data.timestamp,
@@ -93,6 +94,10 @@ export function useSSE(url: string = "/api/leaderboard") {
       }
     };
   }, [url, setEntries, addMetrics, addAnomaly, setConnected, setError]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect } from "react";
 import ReactECharts from "echarts-for-react";
 import { Layers } from "lucide-react";
 
@@ -10,47 +10,51 @@ interface OrderbookLevel {
   orders: number;
 }
 
+function deterministicUnit(seed: number) {
+  const value = Math.sin(seed * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function generateLevels(currentTick: number, midPrice: number) {
+  const bids: OrderbookLevel[] = [];
+  const asks: OrderbookLevel[] = [];
+
+  for (let i = 0; i < 12; i++) {
+    const spread = 0.01 * (i + 1);
+    const bidQty = Math.floor(50 + deterministicUnit(currentTick * 31 + i) * 400);
+    const askQty = Math.floor(50 + deterministicUnit(currentTick * 37 + i) * 400);
+    bids.push({
+      price: parseFloat((midPrice - spread).toFixed(2)),
+      quantity: bidQty + Math.floor(deterministicUnit(currentTick * 41 + i) * 30) - 15,
+      orders: Math.floor(1 + deterministicUnit(currentTick * 43 + i) * 8),
+    });
+    asks.push({
+      price: parseFloat((midPrice + spread).toFixed(2)),
+      quantity: askQty + Math.floor(deterministicUnit(currentTick * 47 + i) * 30) - 15,
+      orders: Math.floor(1 + deterministicUnit(currentTick * 53 + i) * 8),
+    });
+  }
+
+  return { bids, asks };
+}
+
 /**
  * LiveOrderbookDepth — Real-time orderbook depth visualization showing
- * bid/ask imbalance with animated price levels. Simulates a live feed
- * from the benchmark reference LOB.
+ * bid/ask imbalance with animated, deterministic price levels.
  */
 export function LiveOrderbookDepth() {
-  const [bidLevels, setBidLevels] = useState<OrderbookLevel[]>([]);
-  const [askLevels, setAskLevels] = useState<OrderbookLevel[]>([]);
-
+  const [tick, setTick] = useState(0);
   const midPrice = 100.0;
 
-  // Simulate orderbook level updates
-  const generateLevels = useCallback(() => {
-    const bids: OrderbookLevel[] = [];
-    const asks: OrderbookLevel[] = [];
-
-    for (let i = 0; i < 12; i++) {
-      const spread = 0.01 * (i + 1);
-      const bidQty = Math.floor(50 + Math.random() * 400);
-      const askQty = Math.floor(50 + Math.random() * 400);
-      bids.push({
-        price: parseFloat((midPrice - spread).toFixed(2)),
-        quantity: bidQty + Math.floor(Math.random() * 30) - 15,
-        orders: Math.floor(1 + Math.random() * 8),
-      });
-      asks.push({
-        price: parseFloat((midPrice + spread).toFixed(2)),
-        quantity: askQty + Math.floor(Math.random() * 30) - 15,
-        orders: Math.floor(1 + Math.random() * 8),
-      });
-    }
-
-    setBidLevels(bids);
-    setAskLevels(asks);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((value) => value + 1), 1500);
+    return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    generateLevels();
-    const interval = setInterval(generateLevels, 1500);
-    return () => clearInterval(interval);
-  }, [generateLevels]);
+  const { bids: bidLevels, asks: askLevels } = useMemo(
+    () => generateLevels(tick, midPrice),
+    [tick, midPrice]
+  );
 
   const option = useMemo(() => {
     const bidPrices = bidLevels.map((l) => l.price.toFixed(2));

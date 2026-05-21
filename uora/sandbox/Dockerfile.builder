@@ -3,6 +3,8 @@
 # inside sandboxed Docker builds and deploys them to Kubernetes.
 # ────────────────────────────────────────────────────────────────────────────
 
+FROM moby/buildkit:latest AS buildkit
+
 FROM python:3.11-slim AS base
 
 # Install Docker CLI (for buildx) and kubectl
@@ -21,7 +23,8 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y --no-install-recommends docker-ce-cli && \
     # kubectl
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    ARCH="$(dpkg --print-architecture)" && \
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl" && \
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl && \
     # Clean up
@@ -29,6 +32,8 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+COPY --from=buildkit /usr/bin/buildctl /usr/local/bin/buildctl
 
 # Create non-root user
 RUN groupadd --gid 1000 uora && \

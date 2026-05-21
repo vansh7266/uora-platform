@@ -48,7 +48,7 @@ export function SubmissionDetail() {
     prevRank: 1,
     submission_id: "sub-001",
     team: "Team Alpha",
-    language: "C++",
+    language: "cpp",
     composite_score: 95.2,
     p99_latency_ms: 1.2,
     p50_latency_ms: 0.4,
@@ -58,12 +58,10 @@ export function SubmissionDetail() {
     anomaly_score: 0.15,
   }), []);
 
-  // Use selected entry or create mock data for display
   const entry = selectedEntry || fallbackEntry;
 
   // Latency histogram data
   const histogramOption = useMemo(() => {
-    // Generate mock latency distribution
     const bins = 30;
     const labels: string[] = [];
     const values: number[] = [];
@@ -76,8 +74,7 @@ export function SubmissionDetail() {
       const std = entry.p99_latency_ms / 4;
       const x = latency;
       const gaussian =
-        Math.exp(-0.5 * Math.pow((x - mean) / std, 2)) * 100 +
-        Math.random() * 5;
+        Math.exp(-0.5 * Math.pow((x - mean) / std, 2)) * 100;
       values.push(Math.max(0, gaussian));
     }
 
@@ -173,14 +170,14 @@ export function SubmissionDetail() {
                 <span
                   className={cn(
                     "px-2 py-0.5 rounded text-[10px] font-mono border",
-                    entry.language === "C++"
+                    entry.language === "cpp"
                       ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
                       : entry.language === "Rust"
                       ? "bg-orange-500/10 text-orange-400 border-orange-500/20"
                       : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
                   )}
                 >
-                  {entry.language}
+                  {entry.language === "cpp" ? "C++" : entry.language}
                 </span>
               </div>
               <p className="text-sm text-slate-500 font-mono">
@@ -275,7 +272,7 @@ export function SubmissionDetail() {
               {CORRECTNESS_LEVELS.map((level, idx) => {
                 const passRate = Math.max(
                   0.7,
-                  entry.correctness_rate - idx * 0.05 + Math.random() * 0.02
+                  entry.correctness_rate - idx * 0.05
                 );
                 const passed = passRate >= 0.95;
 

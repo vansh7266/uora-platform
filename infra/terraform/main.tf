@@ -9,6 +9,12 @@ variable "allowed_ssh_cidr" {
   default     = "10.0.0.0/16"
 }
 
+variable "allowed_app_cidr" {
+  description = "CIDR block allowed to reach non-public app ports. Expose 80/443 publicly and keep service ports private."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
 resource "aws_vpc" "uora_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -81,7 +87,7 @@ resource "aws_security_group" "uora_sg" {
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_app_cidr]
   }
 
   # Reference Server / Submission API
@@ -89,14 +95,14 @@ resource "aws_security_group" "uora_sg" {
     from_port   = 8000
     to_port     = 8000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_app_cidr]
   }
   
   ingress {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.allowed_app_cidr]
   }
 
   # TimescaleDB
@@ -191,6 +197,6 @@ module "eks" {
 
   tags = {
     Environment = "production"
-    Project     = "UORA-IICPC"
+    Project     = "UORA"
   }
 }

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-// In production, UORA_API_URL should be set to the Python backend URL.
-// In docker-compose, the backend is named 'submission' on port 8000.
-const BACKEND_URL = process.env.UORA_API_URL || "http://submission:8000";
+const BACKEND_URL =
+  process.env.UORA_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 
 export async function GET() {
   try {
@@ -27,7 +28,7 @@ export async function GET() {
         "X-Accel-Buffering": "no",
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: "Failed to connect to backend" }, { status: 503 });
   }
 }

@@ -1,307 +1,177 @@
 "use client";
 
-import { motion } from "framer-motion";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
-  Shield,
-  Zap,
-  Brain,
-  Calculator,
-  ArrowRight,
-  ChevronRight,
-  Terminal,
   Activity,
+  ArrowRight,
+  Bot,
+  Boxes,
+  Gauge,
+  LineChart,
+  LockKeyhole,
+  Radio,
+  ShieldCheck,
+  UploadCloud,
 } from "lucide-react";
+import { UoraLogo } from "@/components/ui/UoraLogo";
 
-const features = [
-  {
-    icon: Shield,
-    title: "Absolute Security Sandbox",
-    description:
-      "gVisor userspace kernel + rootless BuildKit + seccomp-bpf deny-by-default profiles. Zero host kernel access for untrusted submitted binaries.",
-    color: "from-uora-cyan to-blue-500",
-    glow: "group-hover:shadow-[0_0_30px_rgba(6,182,212,0.15)]",
-  },
-  {
-    icon: Zap,
-    title: "Hyper-Scale Throughput",
-    description:
-      "69,348 orders/sec demonstrated via vertically scaled asyncio Bot Fleet orchestrator with circuit breakers and exponential backoff.",
-    color: "from-yellow-400 to-orange-500",
-    glow: "group-hover:shadow-[0_0_30px_rgba(245,158,11,0.15)]",
-  },
-  {
-    icon: Brain,
-    title: "ML Anomaly Detection",
-    description:
-      "Isolation Forest tracking 8 entropy and latency features to instantly flag hardcoded cheating, memory leaks, or erratic engine crashes.",
-    color: "from-purple-400 to-pink-500",
-    glow: "group-hover:shadow-[0_0_30px_rgba(168,85,247,0.15)]",
-  },
-  {
-    icon: Calculator,
-    title: "Mathematical Correctness",
-    description:
-      "Real-time cross-validation against a shadow reference LOB using Graph Edit Distance on L3 states — strict Price-Time priority guaranteed.",
-    color: "from-uora-success to-emerald-500",
-    glow: "group-hover:shadow-[0_0_30px_rgba(16,185,129,0.15)]",
-  },
+const pipeline = [
+  { label: "Upload", detail: "C++ / Rust / Go", icon: UploadCloud, tone: "text-uora-cyan" },
+  { label: "Isolate", detail: "gVisor runtime", icon: LockKeyhole, tone: "text-uora-success" },
+  { label: "Load", detail: "REST / WS / FIX", icon: Bot, tone: "text-uora-warning" },
+  { label: "Score", detail: "Latency + correctness", icon: Gauge, tone: "text-uora-blue" },
 ];
 
-const stats = [
-  { label: "Orders/sec", value: "69,348", suffix: "" },
-  { label: "Validation Levels", value: "4", suffix: " (L1-L4)" },
-  { label: "Anomaly Features", value: "8", suffix: " tracked" },
-  { label: "Sandbox Layers", value: "3", suffix: " deep" },
+const proof = [
+  { label: "Sandbox", value: "Non-root", icon: ShieldCheck },
+  { label: "Telemetry", value: "Timescale", icon: Activity },
+  { label: "Leaderboard", value: "SSE live", icon: Radio },
+  { label: "Deploy", value: "K8s-ready", icon: Boxes },
 ];
 
-const letterVariants = {
-  hidden: { opacity: 0, y: 20, filter: "blur(8px)" },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    filter: "blur(0px)",
-    transition: {
-      delay: 0.8 + i * 0.08,
-      duration: 0.4,
-      ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
-    },
-  }),
-};
-
-export default function LandingPage() {
+export default function HomePage() {
   return (
-    <div className="min-h-screen bg-uora-bg text-slate-100 overflow-hidden">
-      {/* Animated grid background */}
-      <div className="fixed inset-0 bg-grid-pattern opacity-60 pointer-events-none" />
-      <div className="fixed inset-0 bg-gradient-to-b from-uora-cyan/[0.03] via-transparent to-transparent pointer-events-none" />
+    <main className="min-h-screen overflow-hidden bg-[#05080d] text-slate-100">
+      <div className="absolute inset-0 bg-grid-pattern opacity-80" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-uora-cyan/70 to-transparent" />
 
-      {/* Scan line */}
-      <div className="fixed inset-0 scanline-effect pointer-events-none z-10" />
-
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-6">
-        <div className="max-w-5xl mx-auto text-center relative z-10">
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-uora-surface border border-uora-border-light text-xs font-mono text-slate-400 mb-8"
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-uora-cyan animate-pulse" />
-            UORA Open-Source HFT Challenge
-          </motion.div>
-
-          {/* Title with glitch reveal */}
-          <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold tracking-tighter mb-6 flex items-center justify-center">
-            {"UORA".split("").map((letter, i) => (
-              <motion.span
-                key={i}
-                custom={i}
-                variants={letterVariants}
-                initial="hidden"
-                animate="visible"
-                className="inline-block bg-gradient-to-b from-white via-slate-200 to-slate-400 bg-clip-text text-transparent"
-              >
-                {letter}
-              </motion.span>
-            ))}
-          </h1>
-
-          {/* Tagline */}
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.2, duration: 0.6 }}
-            className="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto mb-4 font-light"
-          >
-            Unified Orderbook Resilience Architecture
-          </motion.p>
-
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.5, duration: 0.6 }}
-            className="text-sm text-slate-500 max-w-xl mx-auto mb-12"
-          >
-            A distributed, production-grade benchmarking platform that rigorously
-            evaluates High-Frequency Trading matching engines using deterministic
-            LOBSTER data replay, mathematical state validation, and ML anomaly
-            detection.
-          </motion.p>
-
-          {/* CTA Buttons */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.8, duration: 0.5 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4"
-          >
-            <Link href="/dashboard">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="group relative px-8 py-4 rounded-xl bg-gradient-to-r from-uora-cyan to-uora-blue text-white font-semibold text-sm tracking-wide flex items-center gap-2 overflow-hidden"
-              >
-                <span className="relative z-10 flex items-center gap-2">
-                  <Activity className="w-4 h-4" />
-                  Live Dashboard
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-uora-cyan to-uora-blue opacity-0 group-hover:opacity-100 blur-xl transition-opacity" />
-              </motion.button>
-            </Link>
-
-            <Link href="/auth">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="px-8 py-4 rounded-xl border border-uora-border-light text-slate-300 font-medium text-sm flex items-center gap-2 hover:bg-uora-elevated/50 hover:border-uora-cyan/30 transition-all"
-              >
-                <Terminal className="w-4 h-4" />
-                Get Started
-              </motion.button>
-            </Link>
-          </motion.div>
-
-          {/* Breathing border decoration */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 2.0 }}
-            className="absolute -inset-16 border border-uora-cyan/10 rounded-3xl animate-breathing pointer-events-none"
-          />
-        </div>
-
-        {/* Scroll indicator */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 2.5 }}
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-slate-600"
-        >
-          <span className="text-xs font-mono">Scroll</span>
-          <motion.div
-            animate={{ y: [0, 6, 0] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="w-px h-6 bg-gradient-to-b from-slate-600 to-transparent"
-          />
-        </motion.div>
-      </section>
-
-      {/* Stats Bar */}
-      <section className="relative border-y border-uora-border bg-uora-surface/50 backdrop-blur-sm py-8">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
-          {stats.map((stat, i) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1, duration: 0.5 }}
-              className="text-center"
+      <div className="relative mx-auto flex min-h-screen max-w-[1500px] flex-col px-5 py-5 sm:px-8 lg:px-10">
+        <header className="flex items-center justify-between">
+          <UoraLogo size="md" />
+          <div className="flex items-center gap-3">
+            <Link
+              href="/auth"
+              className="hidden rounded-lg border border-[#2a3a50] bg-[#101823] px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-uora-cyan/40 hover:text-white sm:inline-flex"
             >
-              <div className="text-3xl sm:text-4xl font-bold font-mono text-uora-cyan tabular-nums">
-                {stat.value}
-              </div>
-              <div className="text-xs text-slate-500 mt-1 font-mono">
-                {stat.label}
-                <span className="text-slate-600">{stat.suffix}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+              Sign In
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 rounded-lg border border-uora-cyan/35 bg-uora-cyan/12 px-4 py-2 text-sm font-semibold text-uora-cyan transition hover:bg-uora-cyan/20"
+            >
+              Open Dashboard
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </header>
 
-      {/* Feature Cards */}
-      <section className="relative py-24 px-6">
-        <div className="max-w-6xl mx-auto">
+        <section className="grid flex-1 items-center gap-10 py-12 lg:grid-cols-[0.92fr_1.08fr] lg:py-16">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: "easeOut" }}
+            className="max-w-3xl"
           >
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Core{" "}
-              <span className="bg-gradient-to-r from-uora-cyan to-uora-blue bg-clip-text text-transparent">
-                Architecture
-              </span>
-            </h2>
-            <p className="text-slate-400 max-w-xl mx-auto text-sm">
-              Four pillars of deterministic HFT benchmarking — rigorous validation,
-              zero trust, and mathematical correctness.
+            <div className="mb-5 h-px w-28 bg-gradient-to-r from-uora-cyan to-transparent" />
+            <h1 className="text-5xl font-semibold tracking-tight text-white sm:text-6xl lg:text-7xl">
+              Benchmark trading engines under real market pressure.
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
+              UORA hosts untrusted matching-engine submissions, drives concurrent order flow,
+              validates price-time priority, and streams live latency, throughput, and
+              correctness scores.
             </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-uora-cyan px-5 py-3 text-sm font-bold text-[#041017] transition hover:bg-[#4de7d7]"
+              >
+                Launch Console
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/auth"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#2a3a50] bg-[#101823] px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-uora-cyan/40"
+              >
+                Submit Engine
+              </Link>
+            </div>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {features.map((feature, i) => (
-              <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.12, duration: 0.5 }}
-                className={`group relative bg-uora-surface border border-uora-border rounded-2xl p-8 transition-all duration-300 hover:border-uora-border-light ${feature.glow}`}
-              >
-                <div
-                  className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-5`}
-                >
-                  <feature.icon className="w-6 h-6 text-white" />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.12, duration: 0.55, ease: "easeOut" }}
+            className="relative"
+          >
+            <div className="rounded-lg border border-[#26364b] bg-[#0b1119]/95 shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between border-b border-[#223047] px-5 py-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-100">Benchmark Pipeline</div>
+                  <div className="text-xs text-slate-500">Upload to live score stream</div>
                 </div>
-                <h3 className="text-lg font-semibold mb-3 text-slate-100">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  {feature.description}
-                </p>
-                <ChevronRight className="absolute top-8 right-6 w-4 h-4 text-slate-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+                <div className="flex items-center gap-2 rounded-md border border-uora-success/30 bg-uora-success/10 px-3 py-1.5 text-xs font-mono text-uora-success">
+                  <span className="h-2 w-2 rounded-full bg-uora-success" />
+                  READY
+                </div>
+              </div>
 
-      {/* Tech Stack */}
-      <section className="relative py-16 px-6 border-t border-uora-border bg-uora-surface/30">
-        <div className="max-w-5xl mx-auto text-center">
-          <p className="text-xs font-mono text-slate-500 mb-8 tracking-widest uppercase">
-            Powered By
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-8 text-slate-500">
-            {[
-              "gVisor",
-              "TimescaleDB",
-              "Redis",
-              "Polars",
-              "asyncio",
-              "Next.js",
-              "ECharts",
-              "Terraform",
-            ].map((tech, i) => (
-              <motion.span
-                key={tech}
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.05 }}
-                className="text-sm font-mono px-4 py-2 rounded-lg bg-uora-elevated/50 border border-uora-border/50"
-              >
-                {tech}
-              </motion.span>
-            ))}
-          </div>
-        </div>
-      </section>
+              <div className="grid gap-4 p-5 sm:grid-cols-2">
+                {pipeline.map(({ label, detail, icon: Icon, tone }, index) => (
+                  <div
+                    key={label}
+                    className="relative overflow-hidden rounded-lg border border-[#253449] bg-[#101823] p-4"
+                  >
+                    <div className="absolute right-4 top-4 font-mono text-xs text-slate-600">
+                      0{index + 1}
+                    </div>
+                    <Icon className={`mb-5 h-5 w-5 ${tone}`} />
+                    <div className="text-base font-semibold text-white">{label}</div>
+                    <div className="mt-1 text-sm text-slate-500">{detail}</div>
+                  </div>
+                ))}
+              </div>
 
-      {/* Footer */}
-      <footer className="border-t border-uora-border py-8 px-6">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-          <span className="font-mono">UORA Platform</span>
-          <span>Built with precision. Benchmarked with rigor.</span>
-        </div>
-      </footer>
-    </div>
+              <div className="grid border-t border-[#223047] p-5 lg:grid-cols-[1fr_0.92fr]">
+                <div className="min-h-[220px] rounded-lg border border-[#253449] bg-[#070c12] p-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div className="text-sm font-semibold">Latency Trace</div>
+                    <LineChart className="h-4 w-4 text-uora-cyan" />
+                  </div>
+                  <svg viewBox="0 0 520 180" className="h-44 w-full" aria-hidden>
+                    <defs>
+                      <linearGradient id="trace-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop stopColor="#39D5C3" stopOpacity="0.28" />
+                        <stop offset="1" stopColor="#39D5C3" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66"
+                      fill="none"
+                      stroke="#39D5C3"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66 L520 180 L0 180 Z"
+                      fill="url(#trace-fill)"
+                    />
+                    {[90, 180, 270, 360, 450].map((x) => (
+                      <line key={x} x1={x} x2={x} y1="12" y2="168" stroke="#1b2a3b" strokeWidth="1" />
+                    ))}
+                  </svg>
+                </div>
+                <div className="grid gap-3 pt-4 lg:pl-4 lg:pt-0">
+                  {proof.map(({ label, value, icon: Icon }) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between rounded-lg border border-[#253449] bg-[#101823] px-4 py-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="h-4 w-4 text-uora-cyan" />
+                        <span className="text-sm text-slate-400">{label}</span>
+                      </div>
+                      <span className="font-mono text-sm font-semibold text-slate-100">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+      </div>
+    </main>
   );
 }
+

@@ -1,87 +1,210 @@
-# Unified Orderbook Resilience Architecture (UORA)
+# UORA Architecture Blueprint
 
-**Executive Summary**
-UORA is a distributed, high-throughput benchmarking platform designed to rigorously evaluate contestant-submitted High-Frequency Trading (HFT) matching engines. For proprietary trading firms and quantitative hedge funds, microsecond-level latency variance and absolute algorithmic correctness under extreme load are not "nice-to-haves" — they are the foundational requirements of survival. UORA replicates the chaotic, high-volume environment of modern electronic exchanges using real-world Level 3 LOBSTER data, subjecting contestant binaries to intense stress-testing while measuring P99 latencies, deterministic correctness, and system resilience.
+UORA is a distributed benchmarking and hosting platform for contestant-submitted
+trading engines. The production goal is simple: accept untrusted matching-engine
+code, build and run it in an isolated environment, generate realistic order flow,
+capture latency and correctness telemetry, and stream a live composite ranking.
 
----
+This document reflects the verified implementation in this repository. It avoids
+demo-only claims and separates current behavior from the production scaling path.
 
-## 1. Problem Decomposition
-UORA is structured into four distinct, loosely coupled layers:
+## Requirement Coverage
 
-1. **Submission & Sandbox Layer (gVisor/K8s)**
-   Contestant engines are executed in highly isolated environments to prevent malicious system calls while guaranteeing a level playing field.
-2. **Telemetry & Ingestion Layer (Envoy + Redis + TimescaleDB)**
-   Every order dispatched triggers a telemetry event. Envoy sidecars intercept traffic, funneling logs to a Redis queue, which are then asynchronously batch-inserted into TimescaleDB continuous aggregates.
-3. **Bot Fleet & Load Generation (Asyncio/Aiohttp)**
-   A scalable orchestrator spawns thousands of stateful bot actors. These bots replay LOBSTER data scenarios with jitter and realistic network delay, simulating a highly active market.
-4. **Validation & Scoring Engine (Polars + ML Isolation Forest)**
-   The correctness validator checks contestant L3 states against a reference engine. The ML layer detects cheating (e.g., hardcoded responses) and engine crashes using an Isolation Forest model trained on expected entropy profiles.
+| Requirement | UORA implementation |
+| --- | --- |
+| Code upload | FastAPI submission service accepts source uploads and enqueues build jobs. |
+| Containerized deployment | Builder service uses BuildKit, local registry, Kubernetes pod/service specs, and Docker Compose for local orchestration. |
+| Strict isolation | Kubernetes manifests use gVisor `runtimeClassName`, non-root containers, read-only root filesystems, dropped capabilities, and resource limits. |
+| CPU and memory limits | Docker Compose and Kubernetes manifests define CPU and memory constraints for platform and contestant workloads. |
+| Distributed bot fleet | Async bot coordinator supports REST, WebSocket, and FIX adapters with deterministic scenario seeds. |
+| Order types | Limit, market, and cancel actions are represented in bot scenarios and validator flows. |
+| Telemetry | Envoy captures request latency headers and access logs; ingester persists records to TimescaleDB. |
+| Latency metrics | Timescale hypertables and continuous aggregate expose p50, p90, and p99 latency windows. |
+| Throughput | Bot coordinator records request counts and TPS; scoring uses throughput in the composite score. |
+| Correctness | Deterministic reference limit order book validates price-time priority, fills, cancels, and response counts. |
+| Live leaderboard | Redis Pub/Sub plus Next.js SSE stream live metrics and leaderboard entries to the dashboard. |
+| Infrastructure as Code | Docker Compose, Kubernetes manifests, and Terraform skeleton are included for repeatable deployment. |
 
----
+## System View
 
-## 2. Technology Decisions & Trade-Offs
+```mermaid
+flowchart LR
+    contestant["Contestant"]
+    web["UORA Dashboard"]
+    api["Submission API"]
+    redis["Redis queues and Pub/Sub"]
+    builder["Builder Service"]
+    buildkit["BuildKit"]
+    registry["Local Registry"]
+    sandbox["Isolated Contestant Runtime"]
+    bots["Distributed Bot Fleet"]
+    envoy["Envoy Telemetry Proxy"]
+    ingester["Telemetry Ingester"]
+    tsdb["TimescaleDB"]
+    validator["Correctness Validator"]
+    scoring["Scoring Engine"]
+    sse["Leaderboard SSE"]
 
-- **TimescaleDB over InfluxDB/Prometheus**: While Prometheus is standard for metrics, we required relational joins between granular request logs and correctness violations. TimescaleDB provides PostgreSQL's robustness with hypertable partitioning for time-series ingestion.
-- **Redis Queue vs. Kafka**: Kafka was evaluated for the telemetry bus but rejected due to operational complexity for the deployment environment. Redis lists/PubSub provide sufficient throughput (100k+ ops/sec) with significantly lower latency overhead.
-- **Python Asyncio vs. Go/Rust (Load Gen)**: We chose Python for the Bot Fleet to leverage the rich ecosystem of ML data processing (Polars, Sklearn) in the same language. While Go could yield higher raw throughput per core, `asyncio` with `uvloop` easily saturates our 50k TPS requirement.
+    contestant --> web
+    web --> api
+    api --> redis
+    redis --> builder
+    builder --> buildkit
+    buildkit --> registry
+    builder --> sandbox
+    bots --> envoy
+    envoy --> sandbox
+    envoy --> ingester
+    ingester --> tsdb
+    bots --> validator
+    validator --> tsdb
+    tsdb --> scoring
+    scoring --> redis
+    redis --> sse
+    sse --> web
+```
 
----
+## Service Responsibilities
 
-## 3. Correctness Validation
-The core of UORA's integrity lies in the `CorrectnessValidator`. High-frequency matching engines must adhere to strict Price-Time Priority rules. 
-UORA maintains a shadow **Reference Limit Order Book**. For every scenario executed, the same deterministic stream of orders is fed to the reference engine. The contestant's output stream (Fills, Cancels, Rejects) is zipped and compared via a Graph Edit Distance algorithm against the reference state machine. A single missed fill or out-of-order execution immediately flags the run.
+### Submission API
 
----
+The submission service owns authentication, upload validation, build queueing,
+and leaderboard streaming. It uses Redis for sessions, build job state, and live
+events, and it initializes the Timescale schema during startup so a fresh local
+stack can boot without manual SQL ordering.
 
-## 4. Performance Characteristics
-During Day 7 Integration Testing, UORA demonstrated the following capabilities on standard cloud compute (c6i.2xlarge):
-- **Peak Throughput**: >65,000 orders/sec injected and validated.
-- **Telemetry Latency**: P50 < 1.5ms, P99 < 3ms.
-- **Scoring Pipeline**: Sub-second aggregation using Polars over TimescaleDB 1-minute materialized views.
+Security defaults:
 
----
+- Email and password auth is supported in addition to Google OAuth placeholders.
+- Passwords are hashed with bcrypt.
+- JWT sessions include `iat` and `exp`.
+- Production mode requires `SESSION_SECRET`.
+- Uploads are limited to supported engine languages: C++, Rust, and Go.
 
-## 5. Security Model
-Contestant code is inherently untrusted. UORA's production deployment targets Kubernetes using **gVisor (`runsc`)** as the runtime class. By intercepting system calls in user-space, gVisor prevents container escapes and network snooping. Envoy proxies enforce strict egress policies, ensuring submissions can only communicate with the UORA event bus.
+### Builder and Sandbox
 
----
+The builder consumes Redis build jobs, creates OCI images with BuildKit, pushes
+them to the local registry, and prepares the contestant runtime target. Local
+development uses Docker Compose. Production deployment targets Kubernetes with:
 
-## 6. ML Anomaly Detection
-To prevent "gaming" the benchmark (e.g., returning pre-computed responses without executing logic), UORA utilizes an **Isolation Forest**.
-We extract 8 key features per run:
-1. `latency_entropy` (Variance collapse indicates hardcoding or crashes)
-2. `pattern_correlation`
-3. `volume_conservation_delta`
-4. `state_transition_ged`
-5. `latency_trend_slope` (Detects memory leaks)
-6. `throughput_variance`
-7. `error_rate`
-8. `p99_to_p50_ratio`
+- `runtimeClassName: gvisor`
+- non-root security contexts
+- dropped Linux capabilities
+- read-only root filesystem
+- CPU and memory requests/limits
+- per-submission service discovery
 
-Contamination is set to 1%, actively flagging deviations from reference engine behavior with high precision.
+### Bot Fleet
 
----
+The bot fleet generates concurrent market traffic using deterministic scenarios.
+The coordinator supports REST, WebSocket, and a lightweight FIX execution-report
+adapter so protocol selection does not crash at runtime.
 
-## 7. Chaos Engineering
-UORA goes beyond happy-path testing. The platform actively injects:
-- **Network Partitions**: Simulating exchange gateway drops.
-- **Thundering Herds**: 10x traffic spikes within a 10ms window.
-- **Malformed Packets**: Fuzzing integer bounds and sequence numbers.
-A contestant's composite score is heavily penalized if their engine panics or corrupts state during these events.
+The bot layer records:
 
----
+- total requests
+- success and error counts
+- p50 and p99 latency
+- throughput over the benchmark interval
+- circuit-breaker state when a target becomes unhealthy
 
-## 8. Scaling Path
-UORA evolved rapidly:
-1. **MVP (Local)**: Bare-metal Python scripts.
-2. **Current (Docker Compose)**: Multi-container orchestration, suitable for local validation.
-3. **Production (AWS EKS)**: Terraform-managed infrastructure, scaling the Bot Fleet horizontally as Kubernetes Jobs to simulate millions of simultaneous connections.
+### Telemetry Pipeline
 
----
+Envoy sits between the bot fleet and contestant runtime. It stamps response
+latency, writes structured access logs to a shared volume, and the ingester tails
+that stream into TimescaleDB.
 
-## 9. Lessons Learned
-1. **The Cost of I/O**: Initial telemetry designs wrote directly to Postgres per request. This bottlenecked at 4k TPS. Introducing Redis as an asynchronous buffer allowed us to scale 15x.
-2. **Asyncio Pitfalls**: We discovered that instantiating multiple `asyncio.run()` calls in our test scripts destroyed event loops, leading to unclosed `aiohttp` sessions. Refactoring to a unified lifecycle loop solved our memory leaks.
-3. **Precision Matters**: Moving from standard Python floating-point prices to integer cents was necessary to prevent floating-point drift between contestant and reference engines.
+```mermaid
+sequenceDiagram
+    participant Bot
+    participant Envoy
+    participant Engine as Contestant Engine
+    participant Ingester
+    participant Timescale
 
-*Generated by UORA Core Team*
+    Bot->>Envoy: Order request with x-request-id
+    Envoy->>Engine: Forward request
+    Engine-->>Envoy: Ack/fill/reject
+    Envoy-->>Bot: Response with x-uora-latency-ns
+    Envoy->>Ingester: Access log record
+    Ingester->>Timescale: Batched latency event insert
+```
+
+### Correctness Validator
+
+The validator feeds the same action stream into a deterministic reference limit
+order book and compares contestant responses against expected state transitions.
+It explicitly checks for response-count mismatches so dropped acknowledgements
+cannot be scored as clean runs.
+
+Validation levels:
+
+- L1: response shape and core order fields
+- L2: fill and cancel semantics
+- L3: price-time priority and book state
+- L4: deterministic replay consistency
+
+### Scoring
+
+The scoring engine reads Timescale aggregates and correctness violations, then
+calculates a composite score from:
+
+- throughput
+- p99 latency
+- p50 latency
+- p99-to-p50 tail ratio
+- correctness rate
+- error rate
+- anomaly score
+
+The anomaly detector returns a normalized 0-1 risk score. Higher values indicate
+more suspicious behavior and reduce the final ranking.
+
+## Data Stores
+
+| Store | Purpose |
+| --- | --- |
+| Redis | sessions, build queue, build status, leaderboard Pub/Sub |
+| TimescaleDB | latency events, correctness violations, benchmark scores, build events |
+| MinIO | artifact storage path for local and future cloud-compatible uploads |
+| Local registry | locally built contestant images for Docker/Kubernetes runtime |
+
+## Local Deployment
+
+The local stack is designed to run with:
+
+```bash
+cp .env.example .env
+docker compose up -d
+cd uora/leaderboard && npm run build && npm run start
+```
+
+Primary local endpoints:
+
+- Dashboard: `http://localhost:3000/dashboard`
+- Submission API: `http://localhost:8000`
+- Envoy proxy: `http://localhost:10000`
+- Redis: `localhost:6379` with password from `REDIS_URL`
+- TimescaleDB: `localhost:5432`
+
+## Production Scaling Path
+
+UORA is structured so local services map cleanly to a cloud deployment:
+
+1. Replace the local registry with ECR, Artifact Registry, or GHCR.
+2. Run the submission API, builder, ingester, and scoring worker as Kubernetes deployments.
+3. Run contestant engines as per-submission pods with gVisor RuntimeClass.
+4. Run bot fleets as horizontally scalable Kubernetes jobs.
+5. Use managed Redis and managed PostgreSQL/Timescale where available.
+6. Put the dashboard behind a TLS ingress with strict CORS and secure cookies.
+
+## Operational Checks
+
+Before a judged or production run, verify:
+
+- `docker compose ps` shows Redis, TimescaleDB, BuildKit, builder, ingester, Envoy, and submission healthy.
+- `docker exec uora-redis redis-cli -a uora12345 ping` returns `PONG`.
+- `curl http://localhost:8000/health` returns the submission service health payload.
+- `curl -N http://localhost:3000/api/leaderboard` streams typed `metrics` and `leaderboard` events during an active benchmark.
+- `python3 test_integration.py` completes with zero validation violations against the reference server.
+

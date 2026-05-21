@@ -72,43 +72,23 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
   lastUpdated: null,
 
   setEntries: (entries) => {
-    const state = get();
-    const deployedSubs = state.submissions.filter(s => s.status === 'deployed');
-    
-    // Inject deployed submissions if they aren't provided by the backend SSE stream yet
-    const userEntries = deployedSubs
-      .filter(s => !entries.some(e => e.submission_id === s.id))
-      .map(s => ({
-        rank: 0,
-        prevRank: 0,
-        submission_id: s.id,
-        team: `${s.team} (You)`,
-        language: s.language,
-        composite_score: 97.1 + (Math.random() * 1.5), // Give them a top score
-        p99_latency_ms: 0.35 + (Math.random() * 0.05),
-        p50_latency_ms: 0.15 + (Math.random() * 0.05),
-        throughput: Math.floor(65000 + (Math.random() * 4000)),
-        correctness_rate: 0.9999,
-        status: "completed" as const,
-        anomaly_score: 0,
-      }));
-
-    const combined = [...entries, ...userEntries].sort((a, b) => b.composite_score - a.composite_score);
-    combined.forEach((e, i) => e.rank = i + 1);
-
     const prevEntries = get().entries;
-    const enrichedEntries = combined.map((entry) => {
-      const prev = prevEntries.find(
-        (e) => e.submission_id === entry.submission_id
-      );
-      return {
-        ...entry,
-        prevRank: prev ? prev.rank : entry.rank,
-        language: entry.language || "C++",
-        p50_latency_ms: entry.p50_latency_ms ?? entry.p99_latency_ms * 0.4,
-        anomaly_score: entry.anomaly_score ?? 0,
-      };
-    });
+    const enrichedEntries = entries
+      .slice()
+      .sort((a, b) => b.composite_score - a.composite_score)
+      .map((entry, index) => ({ ...entry, rank: index + 1 }))
+      .map((entry) => {
+        const prev = prevEntries.find(
+          (e) => e.submission_id === entry.submission_id
+        );
+        return {
+          ...entry,
+          prevRank: prev ? prev.rank : entry.rank,
+          language: entry.language || "cpp",
+          p50_latency_ms: entry.p50_latency_ms ?? entry.p99_latency_ms * 0.4,
+          anomaly_score: entry.anomaly_score ?? 0,
+        };
+      });
     set({ entries: enrichedEntries, lastUpdated: Date.now() });
   },
 

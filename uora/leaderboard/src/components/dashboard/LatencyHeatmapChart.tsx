@@ -24,13 +24,17 @@ export function LatencyHeatmapChart() {
         )
       : Array.from({ length: 24 }, (_, i) => `${i}:00`);
 
+    const deterministicUnit = (seed: number) => {
+      const value = Math.sin(seed * 12.9898) * 43758.5453;
+      return value - Math.floor(value);
+    };
+
     // Generate heatmap data: [timeIdx, teamIdx, latencyValue]
     const data: [number, number, number][] = [];
     for (let t = 0; t < timeLabels.length; t++) {
       for (let team = 0; team < teams.length; team++) {
-        // Simulate latency with variance per team
         const baseLatency = entries[team]?.p99_latency_ms ?? 1.5;
-        const jitter = (Math.random() - 0.5) * 0.4;
+        const jitter = (deterministicUnit(t * 97 + team) - 0.5) * 0.4;
         const latency = Math.max(0.1, baseLatency + jitter * baseLatency);
         data.push([t, team, parseFloat(latency.toFixed(3))]);
       }

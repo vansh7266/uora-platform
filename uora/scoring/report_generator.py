@@ -60,6 +60,17 @@ class ReportGenerator:
     def generate_score_card(self, score_data: dict) -> str:
         """Generates the HTML for the primary score summary."""
         score = score_data.get("composite_score", 0)
+        latency_data = score_data.get("latency", {})
+        throughput_data = score_data.get("throughput", {})
+        correctness_data = score_data.get("correctness", {})
+
+        p99_latency_ms = score_data.get("p99_latency_ms", latency_data.get("p99_ms", 0))
+        throughput = score_data.get("throughput", 0)
+        if isinstance(throughput, dict):
+            throughput = throughput.get("avg", throughput.get("max", 0))
+        elif isinstance(throughput_data, dict):
+            throughput = throughput_data.get("avg", throughput_data.get("max", 0))
+        correctness_rate = score_data.get("correctness_rate", correctness_data.get("rate", 0))
         
         color = self.colors["danger"]
         if score > 80:
@@ -74,15 +85,15 @@ class ReportGenerator:
             <div class="metrics-grid">
                 <div class="metric">
                     <span class="label">P99 Latency</span>
-                    <span class="value">{score_data.get("p99_latency_ms", 0):.2f} ms</span>
+                    <span class="value">{float(p99_latency_ms):.2f} ms</span>
                 </div>
                 <div class="metric">
                     <span class="label">Throughput</span>
-                    <span class="value">{score_data.get("throughput", 0):,} ops</span>
+                    <span class="value">{float(throughput):,.0f} ops</span>
                 </div>
                 <div class="metric">
                     <span class="label">Correctness</span>
-                    <span class="value">{score_data.get("correctness_rate", 0) * 100:.2f}%</span>
+                    <span class="value">{float(correctness_rate) * 100:.2f}%</span>
                 </div>
             </div>
         </div>

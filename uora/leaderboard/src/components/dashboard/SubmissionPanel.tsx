@@ -20,11 +20,17 @@ const PIPELINE_STAGES = ["queued", "building", "built", "deployed"] as const;
 type SubmissionStatus = typeof PIPELINE_STAGES[number] | "failed";
 
 const LANGUAGE_MAP: Record<string, string> = {
-  ".cpp": "C++",
-  ".cc": "C++",
-  ".cxx": "C++",
-  ".rs": "Rust",
-  ".go": "Go",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".rs": "rust",
+  ".go": "go",
+};
+
+const LANGUAGE_LABEL: Record<string, string> = {
+  cpp: "C++",
+  rust: "Rust",
+  go: "Go",
 };
 
 function detectLanguage(filename: string): string | null {
@@ -68,14 +74,14 @@ export function SubmissionPanel() {
     setSubmitError(null);
     setSubmitSuccess(null);
 
-    const submissionId = "sub-" + Math.random().toString(36).substr(2, 9);
+    const submissionId = `pending-${file.name.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-${file.size}`;
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("language", language.toLowerCase());
+      formData.append("language", language);
 
       const res = await fetch(`${API_BASE}/api/v1/submit`, {
         method: "POST",
@@ -92,7 +98,7 @@ export function SubmissionPanel() {
           team: user?.team || "Unknown Team",
           language,
           status: "queued",
-          submittedAt: Date.now(),
+          submittedAt: data.queued_at ? Date.parse(data.queued_at) : 0,
         });
 
         setSubmitSuccess(`Submission ${realId.slice(0, 8)}… queued for benchmarking`);
@@ -107,25 +113,12 @@ export function SubmissionPanel() {
 
       const errData = await res.json().catch(() => null);
       throw new Error(errData?.detail || `Upload failed (${res.status})`);
-    } catch {
-      // Backend unreachable — simulate locally for demo
-      console.warn("[Submit] Backend unreachable — simulating pipeline locally");
-
-      addSubmission({
-        id: submissionId,
-        team: user?.team || "Unknown Team",
-        language,
-        status: "queued",
-        submittedAt: Date.now(),
-      });
-
-      setSubmitSuccess(`Submission ${submissionId.slice(0, 8)}… queued (demo mode)`);
-      setFile(null);
-      setLanguage(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-
-      // Simulate pipeline progression
-      simulatePipeline(submissionId);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Submission service is unavailable. Please try again after the API is healthy."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -155,20 +148,6 @@ export function SubmissionPanel() {
         // Polling failed — ignore
       }
     }, 3000);
-  };
-
-  const simulatePipeline = (id: string) => {
-    let stageIndex = 0;
-    const advanceStage = () => {
-      if (stageIndex < PIPELINE_STAGES.length) {
-        updateSubmissionStatus(id, PIPELINE_STAGES[stageIndex]);
-        stageIndex++;
-        if (stageIndex < PIPELINE_STAGES.length) {
-          setTimeout(advanceStage, 1500 + Math.random() * 2000);
-        }
-      }
-    };
-    setTimeout(advanceStage, 1000);
   };
 
   if (!isAuthenticated) {
@@ -236,7 +215,7 @@ export function SubmissionPanel() {
                     getLanguageBg(language)
                   )}
                 >
-                  {language}
+                  {LANGUAGE_LABEL[language] || language}
                 </span>
               )}
             </motion.div>
@@ -357,7 +336,7 @@ export function SubmissionPanel() {
                       {sub.team}
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      {sub.language} · {sub.id.slice(0, 8)}
+                      {LANGUAGE_LABEL[sub.language] || sub.language} · {sub.id.slice(0, 8)}
                     </div>
                   </div>
 

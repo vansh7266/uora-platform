@@ -89,6 +89,7 @@ class ChaosInjector:
             print("⚠ tc not available — running in simulation mode")
             return await self._simulate_chaos(profile)
         cmd = self._build_tc_command(profile)
+        await self._cancel_pending_auto_clear_tasks()
         await self._clear_rules()
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -107,6 +108,7 @@ class ChaosInjector:
 
     async def _simulate_chaos(self, profile: ChaosProfile) -> bool:
         print(f"[SIMULATION] Injecting {profile.mode.name}:")
+        await self._cancel_pending_auto_clear_tasks()
         if profile.delay_ms:
             print(f"  → Simulating {profile.delay_ms}ms delay per packet")
         if profile.percentage:
@@ -123,7 +125,21 @@ class ChaosInjector:
         await asyncio.sleep(delay_sec)
         await self.clear()
 
+    async def _cancel_pending_auto_clear_tasks(self) -> None:
+        current_task = asyncio.current_task()
+        pending = [
+            task for task in list(self._tasks)
+            if task is not current_task and not task.done()
+        ]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            self._tasks.difference_update(pending)
+        self._tasks = {task for task in self._tasks if not task.done()}
+
     async def clear(self) -> bool:
+        await self._cancel_pending_auto_clear_tasks()
         if not self._tc_available:
             print("[SIMULATION] Chaos cleared")
             self.active_profiles.clear()

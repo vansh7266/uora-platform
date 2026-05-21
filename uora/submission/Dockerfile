@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Application code
 COPY uora/submission/main.py /app/main.py
+COPY uora/__init__.py /app/uora/__init__.py
+COPY uora/telemetry/__init__.py /app/uora/telemetry/__init__.py
+COPY uora/telemetry/migrations.py /app/uora/telemetry/migrations.py
 
 # Non-root user for security
 RUN useradd -m -u 1000 uora && chown -R uora:uora /app

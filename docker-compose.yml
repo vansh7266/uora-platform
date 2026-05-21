@@ -189,6 +189,16 @@ services:
   # --- Envoy Sidecar (for telemetry capture) ---
   # In production, this runs as a sidecar in the contestant pod.
   # Locally, we run it standalone for testing.
+  telemetry-log-init:
+    image: alpine:3.20
+    container_name: uora-telemetry-log-init
+    command: sh -c "mkdir -p /var/log/uora && touch /var/log/uora/access.log && chmod 0777 /var/log/uora && chmod 0666 /var/log/uora/access.log"
+    volumes:
+      - telemetry_logs:/var/log/uora
+    networks:
+      - backend
+    restart: "no"
+
   envoy:
     image: envoyproxy/envoy:v1.29-latest
     container_name: uora-envoy
@@ -197,7 +207,11 @@ services:
       - "10000:10000"
     volumes:
       - ./infra/envoy/envoy.yaml:/etc/envoy/envoy.yaml
-    command: [ "-c", "/etc/envoy/envoy.yaml", "--log-level", "debug" ]
+      - telemetry_logs:/var/log/uora
+    command: [ "-c", "/etc/envoy/envoy.yaml", "--log-level", "info" ]
+    depends_on:
+      telemetry-log-init:
+        condition: service_completed_successfully
     networks:
       - backend
     mem_limit: 256m
@@ -208,14 +222,12 @@ services:
       timeout: 5s
       retries: 3
 
-  # --- Telemetry Ingester (gRPC ALS server) ---
+  # --- Telemetry Ingester (Envoy access-log tailer) ---
   ingester:
     build:
       context: .
       dockerfile: uora/telemetry/Dockerfile
     container_name: uora-ingester
-    ports:
-      - "50051:50051"
     environment:
       - PYTHONUNBUFFERED=1
       - DB_HOST=timescaledb
@@ -226,7 +238,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-uora12345}
+      - ENVOY_ACCESS_LOG=/var/log/uora/access.log
+    volumes:
+      - telemetry_logs:/var/log/uora
     depends_on:
+      telemetry-log-init:
+        condition: service_completed_successfully
       timescaledb:
         condition: service_healthy
       redis:
@@ -250,3 +267,4 @@ volumes:
   redis_data:
   buildkit_cache:
   registry_data:
+  telemetry_logs:

@@ -5,8 +5,6 @@ Fixed STP infinite loop bug. Uses plain dict for maximum compatibility.
 
 from __future__ import annotations
 
-import time
-import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
@@ -26,8 +24,6 @@ class Order:
     status: str = "pending"  # pending, partial_fill, filled, cancelled
 
     def __post_init__(self):
-        if not self.timestamp:
-            self.timestamp = time.time_ns()
         if not self.participant_id:
             self.participant_id = self.id
 
@@ -63,6 +59,12 @@ class OrderBook:
         self.orders = {}  # order_id -> Order
         # Sequence number for deterministic replay
         self.sequence = 0
+        self.event_sequence = 0
+
+    def _next_event_timestamp(self) -> int:
+        """Deterministic logical timestamp for fills and snapshots."""
+        self.event_sequence += 1
+        return self.event_sequence
 
     # ─── Public API ──────────────────────────────────────────────────────────
 
@@ -72,6 +74,8 @@ class OrderBook:
         Returns: (list of fills, updated order)
         """
         self.sequence += 1
+        if not order.timestamp:
+            order.timestamp = self._next_event_timestamp()
 
         if order.order_type == "market":
             return self._match_market(order)
@@ -139,7 +143,7 @@ class OrderBook:
         return {
             "bids": bids,
             "asks": asks,
-            "timestamp": time.time_ns(),
+            "timestamp": self.event_sequence,
             "sequence": self.sequence
         }
 
@@ -266,7 +270,7 @@ class OrderBook:
                 sell_order_id=aggressor.id if aggressor.side == "sell" else resting.id,
                 price=price,
                 quantity=fill_qty,
-                timestamp=time.time_ns(),
+                timestamp=self._next_event_timestamp(),
                 aggressor_side=aggressor_side
             )
             fills.append(fill)
@@ -434,6 +438,22 @@ def test_market_order():
     print("✓ Test 8: Market order")
 
 
+def test_deterministic_replay_timestamps():
+    """Test 9: Identical order streams produce identical fills and snapshots."""
+    def run_once():
+        lob = OrderBook()
+        lob.submit_order(Order("S1", "sell", "limit", 100.0, 5))
+        fills, _ = lob.submit_order(Order("B1", "buy", "limit", 100.0, 5))
+        return [fill.__dict__ for fill in fills], lob.get_orderbook_state()
+
+    fills_a, state_a = run_once()
+    fills_b, state_b = run_once()
+
+    assert fills_a == fills_b
+    assert state_a == state_b
+    print("✓ Test 9: Deterministic replay timestamps")
+
+
 if __name__ == "__main__":
     print("Running UORA Reference LOB Tests (v3.1 - STP fix)...\n")
     test_basic_limit()
@@ -444,4 +464,5 @@ if __name__ == "__main__":
     test_multi_level_fill()
     test_cancel()
     test_market_order()
+    test_deterministic_replay_timestamps()
     print("\n✅ All tests passed. Reference LOB is correct.")

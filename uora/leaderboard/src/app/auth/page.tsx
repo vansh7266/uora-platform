@@ -16,6 +16,7 @@ import {
   Zap,
   Brain,
 } from "lucide-react";
+import { UoraLogo } from "@/components/ui/UoraLogo";
 
 type AuthMode = "signin" | "signup";
 
@@ -47,8 +48,8 @@ export default function AuthPage() {
       setError("Please enter a valid email address");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 10) {
+      setError("Password must be at least 10 characters");
       return;
     }
     if (mode === "signup" && !name.trim()) {
@@ -87,31 +88,17 @@ export default function AuthPage() {
           id: data.user?.id || `user-${Date.now()}`,
           name: data.user?.name || name || email.split("@")[0],
           email: data.user?.email || email,
-          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-            data.user?.name || name || email
-          )}&backgroundColor=06b6d4`,
+          avatar: "",
           team: data.user?.team || team || "Solo",
         });
         router.push("/dashboard");
         return;
       }
 
-      // If backend isn't running, allow demo mode
       const errData = await res.json().catch(() => null);
       setError(errData?.detail || `Authentication failed (${res.status})`);
     } catch {
-      // Backend unreachable — enable demo mode for local dev / hackathon demo
-      console.warn("[Auth] Backend unreachable — activating demo mode");
-      login({
-        id: `user-${Date.now().toString(36)}`,
-        name: name || email.split("@")[0],
-        email,
-        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
-          name || email
-        )}&backgroundColor=06b6d4`,
-        team: team || "Demo Team",
-      });
-      router.push("/dashboard");
+      setError("Authentication service is unavailable. Please try again after the API is healthy.");
     } finally {
       setLoading(false);
     }
@@ -123,12 +110,9 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-uora-bg bg-grid-pattern relative overflow-hidden">
-      {/* Ambient background */}
+    <div className="min-h-screen flex items-center justify-center bg-[#060a0f] bg-grid-pattern relative overflow-hidden">
       <div className="absolute inset-0 bg-grid-pattern opacity-50" />
-      <div className="absolute inset-0 bg-gradient-to-b from-uora-cyan/5 via-transparent to-transparent" />
-      <div className="absolute top-1/4 -right-32 w-96 h-96 bg-uora-cyan/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 -left-32 w-96 h-96 bg-uora-blue/5 rounded-full blur-3xl" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,182,212,0.08)_0%,rgba(6,10,15,0)_38%,rgba(16,185,129,0.04)_100%)]" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -136,16 +120,16 @@ export default function AuthPage() {
         transition={{ duration: 0.6 }}
         className="relative z-10 w-full max-w-md px-6"
       >
-        <div className="bg-uora-surface border border-uora-border rounded-2xl overflow-hidden shadow-2xl shadow-black/50">
+        <div className="bg-[#0d131c] border border-[#1f2d3d] rounded-lg overflow-hidden shadow-2xl shadow-black/50">
           {/* Header */}
           <div className="px-8 pt-8 pb-6 text-center">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-uora-cyan to-uora-blue flex items-center justify-center mb-4"
+              className="flex justify-center mb-4"
             >
-              <span className="text-white font-bold text-2xl font-mono">U</span>
+              <UoraLogo size="lg" showWordmark={false} />
             </motion.div>
             <h1 className="text-2xl font-bold tracking-wider font-mono mb-1">
               UORA
@@ -157,7 +141,7 @@ export default function AuthPage() {
 
           {/* Mode Toggle */}
           <div className="px-8 mb-6">
-            <div className="flex bg-uora-bg rounded-xl p-1 border border-uora-border">
+            <div className="flex bg-[#070b11] rounded-lg p-1 border border-[#1f2d3d]">
               <button
                 onClick={() => {
                   setMode("signin");
