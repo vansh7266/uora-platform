@@ -29,6 +29,14 @@ def _action_qty(action: dict[str, Any]) -> int:
     return int(action.get("qty", action.get("quantity", 0)))
 
 
+def _nearest_rank_percentile(sorted_values: list[int], percentile: float) -> int:
+    """Return a deterministic nearest-rank percentile from an already sorted list."""
+    if not sorted_values:
+        return 0
+    rank = math.ceil(len(sorted_values) * percentile)
+    return sorted_values[min(max(rank, 1) - 1, len(sorted_values) - 1)]
+
+
 class BotCoordinator:
     """Orchestrates a fleet of async TradingBot workers."""
 
@@ -36,6 +44,7 @@ class BotCoordinator:
         self._bots:    list[TradingBot]     = []
         self._actions: list[dict[str, Any]] = []
         self._records: list[dict[str, Any]] = []   # all completed order records
+        self._failures: list[dict[str, Any]] = []
         self._errors:  int                  = 0
         self._worker_count: int             = 0
 
@@ -82,6 +91,7 @@ class BotCoordinator:
             raise RuntimeError("No workers — call start() first.")
 
         self._records = []
+        self._failures = []
         self._errors  = 0
 
         deadline  = time.monotonic() + duration_sec
@@ -110,6 +120,12 @@ class BotCoordinator:
                             print(f"Progress: {completed} orders")
                 except Exception as exc:
                     async with lock:
+                        self._failures.append({
+                            "worker_id": worker_id,
+                            "action": action,
+                            "error": str(exc),
+                            "success": False,
+                        })
                         self._errors += 1
                         completed += 1
                         logger.debug("Worker %d error: %s", worker_id, exc)
@@ -132,17 +148,24 @@ class BotCoordinator:
         dict with keys:
             total_orders, avg_latency_ns, p99_latency_ns, success_rate, results
         """
-        total  = len(self._records) + self._errors
-        lats   = [r["latency_ns"] for r in self._records]
+        successful = len(self._records)
+        failed = self._errors
+        total  = successful + failed
+        lats   = [int(r["latency_ns"]) for r in self._records]
         sorted_lats = sorted(lats) if lats else [0]
-        n = len(sorted_lats)
 
         return {
             "total_orders":   total,
+            "successful_orders": successful,
+            "failed_orders": failed,
             "avg_latency_ns": statistics.mean(sorted_lats) if lats else 0.0,
-            "p99_latency_ns": sorted_lats[min(math.ceil(n * 0.99) - 1, n - 1)],
-            "success_rate":   len(self._records) / max(total, 1),
+            "p50_latency_ns": _nearest_rank_percentile(sorted_lats, 0.50),
+            "p90_latency_ns": _nearest_rank_percentile(sorted_lats, 0.90),
+            "p99_latency_ns": _nearest_rank_percentile(sorted_lats, 0.99),
+            "success_rate":   successful / max(total, 1),
+            "error_rate":     failed / max(total, 1),
             "results":        self._records,
+            "failed_results":  self._failures,
         }
 
     # ── Internal dispatch ──────────────────────────────────────────────────────
