@@ -1,7 +1,7 @@
 <div align="center">
   <h1>UORA</h1>
   <h3>Unified Orderbook Resilience Architecture</h3>
-  <p>A distributed, production-grade benchmarking platform that rigorously evaluates High-Frequency Trading (HFT) matching engines using deterministic LOBSTER data replay, mathematical state validation, and ML anomaly detection.</p>
+  <p>A distributed, high-performance benchmarking platform that rigorously evaluates High-Frequency Trading (HFT) matching engines using deterministic LOBSTER data replay, mathematical state validation, and ML anomaly detection.</p>
   <br />
 </div>
 
