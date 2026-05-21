@@ -12,10 +12,12 @@ import {
   FolderOpen,
   X,
   AlertTriangle,
+  FlaskConical,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn, getLanguageBg } from "@/lib/utils";
+import { DEMO_PIPELINE_STAGES } from "@/lib/demoData";
 
 type SubmissionStatus =
   | "queued"
@@ -50,7 +52,11 @@ function getNowTimestamp(queuedAt?: string): number {
   return queuedAt ? Date.parse(queuedAt) : Date.now();
 }
 
-export function SubmissionPanel() {
+interface SubmissionPanelProps {
+  isDemo?: boolean;
+}
+
+export function SubmissionPanel({ isDemo = false }: SubmissionPanelProps) {
   const { isAuthenticated, user } = useAuthStore();
   const { addSubmission, updateSubmissionStatus } = useLeaderboardStore();
   const [file, setFile] = useState<File | null>(null);
@@ -120,12 +126,45 @@ export function SubmissionPanel() {
     }, 2000);
   }, [updateSubmissionStatus]);
 
+  // ── Demo pipeline simulation ───────────────────────────────────────────────
+  const runDemoPipeline = useCallback(
+    async (submissionId: string) => {
+      for (const stage of DEMO_PIPELINE_STAGES) {
+        await new Promise((r) => setTimeout(r, stage.delay));
+        updateSubmissionStatus(submissionId, stage.status as SubmissionStatus);
+      }
+    },
+    [updateSubmissionStatus]
+  );
+
   const handleSubmit = useCallback(async () => {
     if (!file || !language) return;
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
 
+    // ── Demo mode: simulate the full pipeline client-side ─────────────────
+    if (isDemo) {
+      const demoId = `demo-live-${Date.now().toString(16)}`;
+      addSubmission({
+        id: demoId,
+        team: user?.team || "UORA Demo Desk",
+        language: language!,
+        status: "queued",
+        submittedAt: Date.now(),
+      });
+      setSubmitSuccess(`[DEMO] Submission ${demoId.slice(0, 8)} queued — simulating pipeline…`);
+      setFile(null);
+      setLanguage(null);
+      setUnsupportedType(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setIsSubmitting(false);
+      // Run pipeline simulation in background
+      runDemoPipeline(demoId);
+      return;
+    }
+
+    // ── Real mode: hit the actual API ────────────────────────────────────
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -160,7 +199,6 @@ export function SubmissionPanel() {
         setUnsupportedType(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
 
-        // Start polling status
         pollSubmissionStatus(realId, API_BASE);
         return;
       }
@@ -172,7 +210,7 @@ export function SubmissionPanel() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [file, language, addSubmission, user, pollSubmissionStatus]);
+  }, [file, language, isDemo, addSubmission, user, pollSubmissionStatus, runDemoPipeline]);
 
   if (!isAuthenticated) {
     return (
@@ -205,7 +243,15 @@ export function SubmissionPanel() {
       <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
         <div className="flex items-center gap-2">
           <Upload className="w-4 h-4 text-uora-cyan animate-pulse" />
-          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Matching Engine Upload Portal</h3>
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
+            Matching Engine Upload Portal
+          </h3>
+          {isDemo && (
+            <span className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded bg-uora-cyan/10 border border-uora-cyan/25 text-[9px] font-mono text-uora-cyan uppercase tracking-widest">
+              <FlaskConical className="w-2.5 h-2.5" />
+              Demo
+            </span>
+          )}
         </div>
         {file && (
           <button
@@ -219,6 +265,16 @@ export function SubmissionPanel() {
       </div>
 
       <div className="p-6 space-y-4">
+        {/* Demo notice */}
+        {isDemo && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-uora-cyan/5 border border-uora-cyan/20 text-[10px] font-mono text-uora-cyan/80">
+            <FlaskConical className="w-3 h-3 flex-shrink-0 mt-0.5" />
+            <span>
+              Demo mode — upload any <b>.cpp</b>, <b>.rs</b>, or <b>.go</b> file. The pipeline will simulate building, deploying, benchmarking, and scoring with no real backend required.
+            </span>
+          </div>
+        )}
+
         {/* Drop Zone */}
         <div
           onDrop={handleDrop}
@@ -238,7 +294,7 @@ export function SubmissionPanel() {
               : "border-uora-border hover:border-uora-cyan/40 hover:bg-uora-bg/10"
           )}
         >
-          {/* Hidden file input — NOT covering the whole zone to avoid z-index traps */}
+          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -363,6 +419,8 @@ export function SubmissionPanel() {
             "UNSUPPORTED FILE TYPE"
           ) : !language ? (
             "UNABLE TO DETECT LANGUAGE"
+          ) : isDemo ? (
+            "SIMULATE ENGINE EVALUATION →"
           ) : (
             "TRANSMIT ENGINE FOR EVALUATION"
           )}

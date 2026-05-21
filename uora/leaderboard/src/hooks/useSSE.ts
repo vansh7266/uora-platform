@@ -107,6 +107,8 @@ export function useSSE(url: string = "/api/leaderboard") {
   }, [connect]);
 
   useEffect(() => {
+    // Skip SSE connection in demo mode (empty URL)
+    if (!url) return;
     connect();
 
     return () => {
@@ -117,7 +119,7 @@ export function useSSE(url: string = "/api/leaderboard") {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [connect]);
+  }, [connect, url]);
 
   return {
     reconnect: connect,

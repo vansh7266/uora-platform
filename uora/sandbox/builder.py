@@ -452,10 +452,11 @@ class SandboxBuilder:
         ) as s3:
             try:
                 resp = await s3.get_object(Bucket=MINIO_BUCKET, Key=s3_key)
-                async with resp["Body"] as stream:
-                    with open(download_path, "wb") as fh:
-                        async for chunk in stream.iter_chunks(chunk_size=65536):
-                            fh.write(chunk)
+                # aioboto3 StreamingBody: read entire body (files are ≤50 MB)
+                body = resp["Body"]
+                data = await body.read()
+                with open(download_path, "wb") as fh:
+                    fh.write(data)
             except s3.exceptions.NoSuchKey:
                 raise FileNotFoundError(f"S3 key not found: {MINIO_BUCKET}/{s3_key}")
 

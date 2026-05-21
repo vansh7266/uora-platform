@@ -17,6 +17,9 @@ import { useSSE } from "@/hooks/useSSE";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import {
+  DEMO_ENTRIES, DEMO_METRICS, DEMO_ANOMALIES, DEMO_SUBMISSIONS,
+} from "@/lib/demoData";
+import {
   Activity,
   Clock3,
   Gauge,
@@ -28,6 +31,7 @@ import {
   AlertCircle,
   Binary,
   Layers,
+  FlaskConical,
 } from "lucide-react";
 
 const sections = [
@@ -50,11 +54,24 @@ export default function DashboardPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState("submit");
   const { connected, entries, lastUpdated, submissions } = useLeaderboardStore();
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, isDemo } = useAuthStore();
+  const { setEntries, addMetrics, addAnomaly, addSubmission } = useLeaderboardStore();
   const [selectedAuditEngine, setSelectedAuditEngine] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
+  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
 
-  useSSE();
+  // Only connect SSE for real (non-demo) users
+  useSSE(isDemo ? "" : "/api/leaderboard");
+
+  // Seed demo data into the leaderboard store once on mount
+  useEffect(() => {
+    if (!isDemo) return;
+    setEntries(DEMO_ENTRIES);
+    DEMO_METRICS.forEach((m) => addMetrics(m));
+    DEMO_ANOMALIES.forEach((a) => addAnomaly(a));
+    DEMO_SUBMISSIONS.forEach((s) => addSubmission(s));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemo]);
 
   // Auth guard — redirect to /auth if not logged in
   useEffect(() => {
@@ -93,6 +110,31 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-uora-bg bg-dot-pattern text-slate-100">
       <Navbar />
+
+      {/* Demo mode sticky banner */}
+      <AnimatePresence>
+        {isDemo && !demoBannerDismissed && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-16 left-0 right-0 z-40 flex items-center justify-between gap-4 bg-uora-cyan/10 border-b border-uora-cyan/30 px-4 py-2 backdrop-blur-sm"
+          >
+            <div className="flex items-center gap-2">
+              <FlaskConical className="w-3.5 h-3.5 text-uora-cyan flex-shrink-0" />
+              <p className="text-[11px] font-mono text-uora-cyan/90 tracking-wider">
+                <span className="font-bold">DEMO MODE</span> — All data is simulated. Submissions run a mock pipeline. Sign in with a real account to benchmark your engine.
+              </p>
+            </div>
+            <button
+              onClick={() => setDemoBannerDismissed(true)}
+              className="text-[10px] font-mono text-slate-500 hover:text-slate-300 transition-colors shrink-0 uppercase tracking-wider"
+            >
+              Dismiss
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main className="mx-auto w-full max-w-[1540px] min-w-0 px-4 pb-12 pt-24 sm:px-6 lg:px-8">
         {/* Dashboard Technical Header */}
@@ -175,7 +217,7 @@ export default function DashboardPage() {
           {activeSection === "submit" && (
             <motion.div key="submit" {...panelIn} className="space-y-6">
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
-                <SubmissionPanel />
+                <SubmissionPanel isDemo={isDemo} />
                 <div className="bg-uora-surface border border-uora-border rounded-md p-6 flex flex-col justify-between">
                   <div>
                     <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">

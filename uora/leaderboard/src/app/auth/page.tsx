@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_USER } from "@/lib/demoData";
 import {
   Mail,
   Lock,
@@ -50,7 +51,9 @@ export default function AuthPage() {
       setError("Please enter a valid email address");
       return;
     }
-    if (password.length < 10) {
+    // Allow demo password which is exactly 12 chars — still enforce min for real users
+    const isDemo = email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD;
+    if (!isDemo && password.length < 10) {
       setError("Password must be at least 10 characters");
       return;
     }
@@ -66,6 +69,13 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
+      // ── Demo shortcut: never touches the backend ──────────────────
+      if (isDemo && mode === "signin") {
+        login(DEMO_USER, true);
+        router.push("/dashboard");
+        return;
+      }
+
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const endpoint =
         mode === "signup"
@@ -151,6 +161,19 @@ export default function AuthPage() {
             <p className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">
               Matching Engine Telemetry Station
             </p>
+
+            {/* Demo credential hint */}
+            <div className="mt-4 px-4 py-2.5 rounded-md bg-uora-cyan/5 border border-uora-cyan/20">
+              <p className="text-[10px] font-mono text-uora-cyan/80 tracking-wider uppercase mb-1">Demo Access</p>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-[11px] font-mono text-slate-300">
+                  <span className="text-slate-500">Email </span>{DEMO_EMAIL}
+                </p>
+                <p className="text-[11px] font-mono text-slate-300">
+                  <span className="text-slate-500">Pass  </span>{DEMO_PASSWORD}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Mode Toggle */}
