@@ -9,6 +9,9 @@ import {
   Loader2,
   Code2,
   AlertCircle,
+  FolderOpen,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
@@ -52,6 +55,7 @@ export function SubmissionPanel() {
   const { addSubmission, updateSubmissionStatus } = useLeaderboardStore();
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState<string | null>(null);
+  const [unsupportedType, setUnsupportedType] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -59,11 +63,21 @@ export function SubmissionPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback((selectedFile: File) => {
-    setFile(selectedFile);
     const detected = detectLanguage(selectedFile.name);
+    setUnsupportedType(!detected);
+    setFile(selectedFile);
     setLanguage(detected);
     setSubmitError(null);
     setSubmitSuccess(null);
+  }, []);
+
+  const handleClearFile = useCallback(() => {
+    setFile(null);
+    setLanguage(null);
+    setUnsupportedType(false);
+    setSubmitError(null);
+    setSubmitSuccess(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
   const handleDrop = useCallback(
@@ -75,6 +89,10 @@ export function SubmissionPanel() {
     },
     [handleFileSelect]
   );
+
+  const handleBrowseClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   const pollSubmissionStatus = useCallback((id: string, apiBase: string) => {
     let attempts = 0;
@@ -139,6 +157,7 @@ export function SubmissionPanel() {
         setSubmitSuccess(`Submission ${realId.slice(0, 8)} queued for isolated evaluation.`);
         setFile(null);
         setLanguage(null);
+        setUnsupportedType(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
 
         // Start polling status
@@ -157,26 +176,49 @@ export function SubmissionPanel() {
 
   if (!isAuthenticated) {
     return (
-      <div className="bg-uora-surface border border-uora-border rounded-md p-8 text-center shadow-lg">
-        <FileCode2 className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-        <h3 className="text-sm font-semibold font-mono tracking-wider text-slate-300 uppercase mb-1">
-          Gateway Secure Upload
-        </h3>
-        <p className="text-xs text-slate-500 font-sans">
-          Authentication credentials are required to route proprietary trading engines to the isolated benchmarking runtime.
-        </p>
+      <div className="bg-uora-surface border border-uora-border rounded-md p-8 shadow-lg">
+        <div className="flex flex-col items-center text-center gap-4">
+          <div className="w-14 h-14 rounded-md bg-uora-bg border border-uora-border flex items-center justify-center">
+            <FileCode2 className="w-7 h-7 text-slate-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold font-mono tracking-wider text-slate-300 uppercase mb-2">
+              Authentication Required
+            </h3>
+            <p className="text-xs text-slate-500 font-sans max-w-xs">
+              You must sign in to submit matching engines to the secure benchmarking runtime.
+            </p>
+          </div>
+          <a
+            href="/auth"
+            className="inline-flex items-center gap-2 mt-1 px-5 py-2.5 rounded-md bg-uora-cyan text-uora-bg font-mono font-bold text-xs tracking-widest hover:shadow-[0_0_15px_rgba(226,181,62,0.25)] transition-all"
+          >
+            Sign In to Submit
+          </a>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="bg-uora-surface border border-uora-border rounded-md overflow-hidden shadow-lg">
-      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center gap-2 bg-uora-bg/30">
-        <Upload className="w-4 h-4 text-uora-cyan animate-pulse" />
-        <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Matching Engine Upload Portal</h3>
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
+        <div className="flex items-center gap-2">
+          <Upload className="w-4 h-4 text-uora-cyan animate-pulse" />
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Matching Engine Upload Portal</h3>
+        </div>
+        {file && (
+          <button
+            onClick={handleClearFile}
+            className="flex items-center gap-1 text-[10px] font-mono text-slate-500 hover:text-uora-error transition-colors uppercase tracking-wider"
+          >
+            <X className="w-3 h-3" />
+            Clear
+          </button>
+        )}
       </div>
 
-      <div className="p-6">
+      <div className="p-6 space-y-4">
         {/* Drop Zone */}
         <div
           onDrop={handleDrop}
@@ -186,12 +228,17 @@ export function SubmissionPanel() {
           }}
           onDragLeave={() => setIsDragging(false)}
           className={cn(
-            "relative border border-dashed rounded-md p-10 text-center transition-all duration-300",
+            "relative border border-dashed rounded-md p-8 text-center transition-all duration-300",
             isDragging
               ? "border-uora-cyan bg-uora-cyan/5 shadow-[0_0_15px_rgba(226,181,62,0.1)]"
+              : file && !unsupportedType
+              ? "border-uora-success/40 bg-uora-success/5"
+              : unsupportedType
+              ? "border-uora-error/40 bg-uora-error/5"
               : "border-uora-border hover:border-uora-cyan/40 hover:bg-uora-bg/10"
           )}
         >
+          {/* Hidden file input — NOT covering the whole zone to avoid z-index traps */}
           <input
             ref={fileInputRef}
             type="file"
@@ -199,7 +246,7 @@ export function SubmissionPanel() {
             onChange={(e) => {
               if (e.target.files?.[0]) handleFileSelect(e.target.files[0]);
             }}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            className="hidden"
           />
 
           {file ? (
@@ -208,12 +255,14 @@ export function SubmissionPanel() {
               animate={{ scale: 1, opacity: 1 }}
               className="space-y-3"
             >
-              <Code2 className="w-8 h-8 text-uora-cyan mx-auto" />
-              <p className="text-xs font-mono text-slate-200 font-semibold">{file.name}</p>
+              <Code2 className={cn("w-8 h-8 mx-auto", unsupportedType ? "text-uora-error" : "text-uora-success")} />
+              <p className="text-xs font-mono text-slate-200 font-semibold truncate max-w-[240px] mx-auto">
+                {file.name}
+              </p>
               <p className="text-[10px] font-mono text-slate-500">
                 {(file.size / 1024).toFixed(2)} KB
               </p>
-              {language && (
+              {language && !unsupportedType && (
                 <span
                   className={cn(
                     "inline-block px-2.5 py-1 rounded text-[9px] font-mono border uppercase tracking-wider",
@@ -228,14 +277,41 @@ export function SubmissionPanel() {
             <div className="space-y-3">
               <Upload className="w-8 h-8 text-slate-600 mx-auto opacity-70" />
               <p className="text-xs font-mono text-slate-400">
-                Drag matching engine source file here or click to browse
+                Drag &amp; drop your matching engine source file here
               </p>
               <p className="text-[9px] font-mono text-slate-600">
-                Supported: C++17/20 (.cpp, .cc), Rust (.rs), Go 1.21 (.go)
+                Supported: C++17/20 (.cpp, .cc, .cxx) · Rust (.rs) · Go (.go)
               </p>
             </div>
           )}
         </div>
+
+        {/* Explicit Browse Button */}
+        <button
+          type="button"
+          onClick={handleBrowseClick}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-md border border-uora-border bg-uora-bg text-xs font-mono text-slate-400 hover:border-uora-cyan/40 hover:text-uora-cyan hover:bg-uora-elevated transition-all duration-200"
+        >
+          <FolderOpen className="w-4 h-4" />
+          {file ? "Change File..." : "Browse & Select File..."}
+        </button>
+
+        {/* Unsupported file type warning */}
+        <AnimatePresence>
+          {unsupportedType && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="flex items-start gap-2 px-4 py-2.5 rounded-md bg-uora-error/5 border border-uora-error/25 text-[11px] font-mono text-uora-error"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                Unsupported file type: <span className="font-bold">{file?.name}</span>. Please upload a <span className="font-bold">.cpp</span>, <span className="font-bold">.cc</span>, <span className="font-bold">.rs</span>, or <span className="font-bold">.go</span> source file.
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Feedback Messages */}
         <AnimatePresence>
@@ -244,7 +320,7 @@ export function SubmissionPanel() {
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-md bg-uora-error/5 border border-uora-error/25 text-[11px] font-mono text-uora-error"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-md bg-uora-error/5 border border-uora-error/25 text-[11px] font-mono text-uora-error"
             >
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
               {submitError}
@@ -255,7 +331,7 @@ export function SubmissionPanel() {
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-3 flex items-center gap-2 px-4 py-2.5 rounded-md bg-uora-success/5 border border-uora-success/25 text-[11px] font-mono text-uora-success"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-md bg-uora-success/5 border border-uora-success/25 text-[11px] font-mono text-uora-success"
             >
               <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
               {submitSuccess}
@@ -265,14 +341,14 @@ export function SubmissionPanel() {
 
         {/* Submit Button */}
         <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
+          whileHover={file && language && !isSubmitting ? { scale: 1.01 } : {}}
+          whileTap={file && language && !isSubmitting ? { scale: 0.99 } : {}}
           onClick={handleSubmit}
-          disabled={!file || !language || isSubmitting}
+          disabled={!file || !language || isSubmitting || unsupportedType}
           className={cn(
-            "w-full mt-5 py-3 rounded-md font-mono tracking-widest text-xs font-bold uppercase transition-all duration-300",
-            file && language && !isSubmitting
-              ? "bg-uora-cyan text-uora-bg hover:shadow-[0_0_15px_rgba(226,181,62,0.25)]"
+            "w-full py-3 rounded-md font-mono tracking-widest text-xs font-bold uppercase transition-all duration-300",
+            file && language && !isSubmitting && !unsupportedType
+              ? "bg-uora-cyan text-uora-bg hover:shadow-[0_0_15px_rgba(226,181,62,0.25)] cursor-pointer"
               : "bg-uora-elevated text-slate-600 border border-uora-border cursor-not-allowed"
           )}
         >
@@ -281,6 +357,12 @@ export function SubmissionPanel() {
               <Loader2 className="w-4 h-4 animate-spin text-uora-bg" />
               DEPLOYING SOURCE...
             </div>
+          ) : !file ? (
+            "SELECT A FILE TO SUBMIT"
+          ) : unsupportedType ? (
+            "UNSUPPORTED FILE TYPE"
+          ) : !language ? (
+            "UNABLE TO DETECT LANGUAGE"
           ) : (
             "TRANSMIT ENGINE FOR EVALUATION"
           )}
