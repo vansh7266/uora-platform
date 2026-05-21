@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -23,119 +22,42 @@ import { UoraLogo } from "@/components/ui/UoraLogo";
 
 // Native Stateful HFT Telemetry Dashboard Widget
 function TelemetryConsoleWidget() {
-  const [mounted, setMounted] = useState(false);
-  const [throughput, setThroughput] = useState(69348);
-  const [latency, setLatency] = useState(8.42);
-  const [cpu, setCpu] = useState(18.4);
-  const [logs, setLogs] = useState<string[]>([
-    "SYS_INIT // BOOTING GVISOR SECURE CONTAINER",
-    "SYS_LOAD // REPLAYING HISTORICAL NASDAQ LOBSTER EVENT FEED",
-    "SYS_READY // CPU AFFINITY PINNED TO CORE 4 & 5",
-  ]);
-  const [bids, setBids] = useState([78, 62, 45, 91, 55]);
-  const [asks, setAsks] = useState([82, 48, 69, 58, 73]);
-
-  useEffect(() => {
-    const mountTimer = setTimeout(() => {
-      setMounted(true);
-    }, 0);
-    
-    const interval = setInterval(() => {
-      setThroughput(prev => {
-        const delta = Math.floor(Math.random() * 200) - 95;
-        return Math.max(68000, Math.min(71000, prev + delta));
-      });
-      setLatency(prev => {
-        const delta = (Math.random() * 0.1) - 0.05;
-        return parseFloat(Math.max(7.9, Math.min(9.2, prev + delta)).toFixed(3));
-      });
-      setCpu(prev => {
-        const delta = (Math.random() * 2) - 0.9;
-        return parseFloat(Math.max(12, Math.min(25, prev + delta)).toFixed(1));
-      });
-      setBids(prev => prev.map(w => Math.max(20, Math.min(100, w + (Math.floor(Math.random() * 15) - 7)))));
-      setAsks(prev => prev.map(w => Math.max(20, Math.min(100, w + (Math.floor(Math.random() * 15) - 7)))));
-    }, 450);
-
-    const logTemplates = [
-      "ORDER_NEW B ID={id} PRICE={p} QTY={q}",
-      "ORDER_MATCH PRICE={p} QTY={q} (BUY={id1} SELL={id2})",
-      "ORDER_NEW A ID={id} PRICE={p} QTY={q}",
-      "ORDER_CANCEL ID={id} PRICE={p} REASON=USER_REQ",
-      "MATCH_ENGINE // PRIORITIZING PRICE-TIME FIFO",
-      "ANOMALY_MONITOR // ISOLATION_FOREST SPECS OK",
-      "AUDIT_LEDGER // HASH FINGERPRINT GENERATED",
-    ];
-
-    let logId = 189425;
-    const logInterval = setInterval(() => {
-      const template = logTemplates[Math.floor(Math.random() * logTemplates.length)];
-      const price = (142.80 + Math.random() * 1.5).toFixed(2);
-      const qty = (Math.floor(Math.random() * 8) + 1) * 50;
-      
-      const newLog = template
-        .replace("{id}", logId.toString())
-        .replace("{id1}", (logId - 2).toString())
-        .replace("{id2}", (logId - 1).toString())
-        .replace("{p}", price)
-        .replace("{q}", qty.toString());
-      
-      logId++;
-      
-      setLogs(prev => {
-        const next = [...prev, `[${new Date().toLocaleTimeString()}] ${newLog}`];
-        if (next.length > 6) next.shift();
-        return next;
-      });
-    }, 900);
-
-    return () => {
-      clearTimeout(mountTimer);
-      clearInterval(interval);
-      clearInterval(logInterval);
-    };
-  }, []);
+  const logs = [
+    "UPLOAD_ACCEPTED // source archived and queued",
+    "BUILD_WORKER // isolated compile stage pending",
+    "SANDBOX_DEPLOY // gVisor runtime enforced",
+    "BENCHMARK_QUEUE // REST order-flow replay scheduled",
+    "VALIDATOR // price-time priority checks ready",
+    "SCORING // waiting for real telemetry rows",
+  ];
+  const bids = [78, 62, 45, 91, 55];
+  const asks = [82, 48, 69, 58, 73];
 
   return (
     <div className="bg-[#08090C] rounded-md border border-uora-border p-4 h-full flex flex-col font-mono text-[10px] text-slate-300 select-none overflow-hidden relative aspect-[16/10] w-full min-h-[360px] shadow-2xl justify-between">
-      {/* Top Console Bar */}
       <div className="flex items-center justify-between border-b border-uora-border/60 pb-3 mb-3">
         <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-uora-success animate-pulse" />
-          <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">UORA_MATCH_NODE_D // ACTIVE</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-uora-cyan" />
+          <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">UORA_PIPELINE_PREVIEW</span>
         </div>
-        <div className="flex gap-4 text-slate-500 text-[8px] uppercase tracking-widest">
-          <span>CPU: <span className="text-uora-cyan font-bold">{mounted ? `${cpu}%` : "18.4%"}</span></span>
-          <span>MEM: <span className="text-slate-300 font-bold">128MB</span></span>
-        </div>
+        <div className="text-slate-500 text-[8px] uppercase tracking-widest">Real metrics stream after scoring</div>
       </div>
 
-      {/* Main Console Split */}
-      <div className="grid grid-cols-[1.15fr_0.85fr] gap-3.5 flex-1 min-h-0">
-        
-        {/* Left Side: Dynamic Scrolling Transaction Feed */}
+      <div className="grid grid-cols-1 sm:grid-cols-[1.15fr_0.85fr] gap-3.5 flex-1 min-h-0">
         <div className="border border-uora-border bg-uora-bg/60 p-3 rounded flex flex-col justify-between overflow-hidden">
           <div className="text-[8px] text-slate-500 uppercase tracking-widest border-b border-uora-border/40 pb-1.5 mb-2 font-bold flex justify-between items-center">
-            <span>Transaction Loop Console</span>
-            <span className="text-uora-cyan text-[7px] animate-pulse">STREAMING</span>
+            <span>Submission Lifecycle</span>
+            <span className="text-uora-cyan text-[7px]">STATEFUL</span>
           </div>
-          
           <div className="flex-1 flex flex-col gap-1.5 font-mono text-[8.5px] text-slate-400 overflow-hidden pr-1 justify-end leading-normal">
             {logs.map((log, index) => (
               <motion.div
-                key={index}
+                key={log}
                 initial={{ opacity: 0, x: -5 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.15 }}
-                className={`truncate ${
-                  log.includes("MATCH") 
-                    ? "text-uora-success font-bold" 
-                    : log.includes("ANOMALY") 
-                      ? "text-uora-cyan font-bold" 
-                      : log.includes("INIT") || log.includes("READY")
-                        ? "text-slate-500" 
-                        : "text-slate-400"
-                }`}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.2, delay: index * 0.05 }}
+                className={log.includes("SCORING") ? "text-uora-success font-bold" : log.includes("VALIDATOR") ? "text-uora-cyan font-bold" : "text-slate-400"}
               >
                 {log}
               </motion.div>
@@ -143,42 +65,29 @@ function TelemetryConsoleWidget() {
           </div>
         </div>
 
-        {/* Right Side: Dynamic Orderbook Depth bars */}
         <div className="border border-uora-border bg-uora-bg/60 p-3 rounded flex flex-col justify-between overflow-hidden">
           <div className="text-[8px] text-slate-500 uppercase tracking-widest border-b border-uora-border/40 pb-1.5 mb-2 font-bold flex justify-between items-center">
-            <span>L3 LOB top-of-book</span>
-            <span className="text-uora-success text-[7px] font-bold">LIVE_MATCH</span>
+            <span>Orderbook Validation Shape</span>
+            <span className="text-uora-success text-[7px] font-bold">REFERENCE LOB</span>
           </div>
-
           <div className="flex-1 flex flex-col justify-around gap-1 font-mono text-[8px]">
-            {/* Sell Orders (Asks) - Red bars */}
             <div className="flex flex-col gap-1 border-b border-uora-border/30 pb-2">
               {asks.map((width, idx) => (
                 <div key={idx} className="flex items-center justify-between gap-2">
                   <span className="text-slate-600 w-8">{(143.50 - idx * 0.1).toFixed(2)}</span>
                   <div className="flex-1 h-2 bg-uora-surface border border-uora-border/40 rounded-sm overflow-hidden flex justify-end">
-                    <motion.div
-                      animate={{ width: `${width}%` }}
-                      transition={{ duration: 0.4, ease: "easeOut" }}
-                      className="bg-red-500/15 border-l border-red-500/50 h-full"
-                    />
+                    <motion.div initial={{ width: 0 }} whileInView={{ width: String(width) + "%" }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="bg-red-500/15 border-l border-red-500/50 h-full" />
                   </div>
                   <span className="text-red-400/80 w-6 text-right font-bold">{(width * 10).toLocaleString()}</span>
                 </div>
               ))}
             </div>
-
-            {/* Buy Orders (Bids) - Green bars */}
             <div className="flex flex-col gap-1 pt-1">
               {bids.map((width, idx) => (
                 <div key={idx} className="flex items-center justify-between gap-2">
                   <span className="text-slate-600 w-8">{(142.70 - idx * 0.1).toFixed(2)}</span>
                   <div className="flex-1 h-2 bg-uora-surface border border-uora-border/40 rounded-sm overflow-hidden">
-                    <motion.div
-                      animate={{ width: `${width}%` }}
-                      transition={{ duration: 0.4, ease: "easeOut" }}
-                      className="bg-emerald-500/15 border-r border-emerald-500/50 h-full"
-                    />
+                    <motion.div initial={{ width: 0 }} whileInView={{ width: String(width) + "%" }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="bg-emerald-500/15 border-r border-emerald-500/50 h-full" />
                   </div>
                   <span className="text-emerald-400/80 w-6 text-right font-bold">{(width * 10).toLocaleString()}</span>
                 </div>
@@ -186,28 +95,20 @@ function TelemetryConsoleWidget() {
             </div>
           </div>
         </div>
-
       </div>
 
-      {/* Bottom Telemetry Metrics grid */}
       <div className="grid grid-cols-3 gap-3 border-t border-uora-border/60 pt-3 mt-3 text-center">
         <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-uora-cyan tabular-nums tracking-wide">
-            {mounted ? throughput.toLocaleString() : "69,348"}
-          </div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">Ingest loops/s</div>
+          <div className="text-[11px] font-bold text-uora-cyan tracking-wide uppercase">BUILD</div>
+          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">queued worker</div>
         </div>
         <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-uora-success tabular-nums tracking-wide">
-            {mounted ? `${latency}μs` : "8.420μs"}
-          </div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">p99 latency</div>
+          <div className="text-[11px] font-bold text-uora-success tracking-wide uppercase">VALIDATE</div>
+          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">reference LOB</div>
         </div>
         <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-slate-300 tracking-wide uppercase">
-            LOCKFREE_FIFO
-          </div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">Priority Rule</div>
+          <div className="text-[11px] font-bold text-slate-300 tracking-wide uppercase">SCORE</div>
+          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">real telemetry</div>
         </div>
       </div>
     </div>
@@ -305,7 +206,7 @@ const uoraFeatures = [
   {
     title: "ML Anomaly Classification",
     icon: Cpu,
-    desc: "An Isolation Forest unsupervised ML detector analyzes 8 dimensional metric vectors (including memory growth, throughput peaks, and latency variance) to instantly flag hardcoded cheat codes, sleep loops, or memory leaks.",
+    desc: "An Isolation Forest detector analyzes benchmark feature vectors, including error rate, throughput variance, and latency shape, to flag runs that need manual review.",
   },
   {
     title: "Graph Edit Distance Validation",
@@ -464,7 +365,7 @@ export default function HomePage() {
                     <LineChart className="h-3.5 w-3.5 text-uora-cyan animate-pulse" />
                   </div>
                   
-                  {/* SVG Chart with dynamic dasharray animation simulating matching speed */}
+                  {/* SVG chart with animated order-flow paths */}
                   <svg viewBox="0 0 520 180" className="h-36 w-full overflow-visible" aria-hidden>
                     <defs>
                       <linearGradient id="trace-fill" x1="0" y1="0" x2="0" y2="1">
