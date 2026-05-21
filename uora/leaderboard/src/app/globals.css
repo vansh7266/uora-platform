@@ -3,20 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --background: #05080D;
-  --foreground: #F1F5F9;
-  --surface: #101823;
-  --elevated: #152132;
-  --cyan: #39D5C3;
-  --blue: #58A6FF;
-  --success: #46D39A;
-  --warning: #F6B84B;
-  --error: #F87171;
+  --background: #08090C;
+  --foreground: #F8FAFC;
+  --surface: #0F1117;
+  --elevated: #171C26;
+  --cyan: #E2B53E;
+  --blue: #3B82F6;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --border: #1E293B;
+  --border-light: #334155;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: #1E293B transparent;
 }
 
 *::-webkit-scrollbar {
@@ -29,12 +31,12 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #1E293B;
   border-radius: 3px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #334155;
 }
 
 body {
@@ -64,47 +66,47 @@ body {
   }
 
   .glow-cyan {
-    box-shadow: 0 0 20px rgba(6, 182, 212, 0.3), 0 0 40px rgba(6, 182, 212, 0.1);
+    box-shadow: 0 0 20px rgba(226, 181, 62, 0.25), 0 0 40px rgba(226, 181, 62, 0.08);
   }
 
   .glow-cyan-sm {
-    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    box-shadow: 0 0 10px rgba(226, 181, 62, 0.15);
   }
 
   .glow-red {
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3), 0 0 40px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.25), 0 0 40px rgba(239, 68, 68, 0.08);
   }
 
   .glow-red-sm {
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.15);
   }
 
   .text-glow-cyan {
-    text-shadow: 0 0 10px rgba(6, 182, 212, 0.5), 0 0 20px rgba(6, 182, 212, 0.3);
+    text-shadow: 0 0 10px rgba(226, 181, 62, 0.4), 0 0 20px rgba(226, 181, 62, 0.2);
   }
 
   .text-glow-red {
-    text-shadow: 0 0 10px rgba(239, 68, 68, 0.5), 0 0 20px rgba(239, 68, 68, 0.3);
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.4), 0 0 20px rgba(239, 68, 68, 0.2);
   }
 
   /* Grid background pattern */
   .bg-grid-pattern {
     background-image:
-      linear-gradient(rgba(88, 166, 255, 0.055) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(88, 166, 255, 0.055) 1px, transparent 1px);
+      linear-gradient(rgba(226, 181, 62, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(226, 181, 62, 0.03) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 
   .bg-grid-pattern-dense {
     background-image:
-      linear-gradient(rgba(88, 166, 255, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(88, 166, 255, 0.07) 1px, transparent 1px);
+      linear-gradient(rgba(226, 181, 62, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(226, 181, 62, 0.04) 1px, transparent 1px);
     background-size: 20px 20px;
   }
 
   /* Dot grid pattern */
   .bg-dot-pattern {
-    background-image: radial-gradient(circle, rgba(6, 182, 212, 0.1) 1px, transparent 1px);
+    background-image: radial-gradient(circle, rgba(226, 181, 62, 0.05) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 }
@@ -158,4 +160,21 @@ body {
 ::selection {
   background: rgba(6, 182, 212, 0.3);
   color: #E2E8F0;
+}
+
+/* Floating animation keyframe */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }
