@@ -16,7 +16,7 @@ demo-only claims and separates current behavior from the production scaling path
 | Containerized deployment | Builder service uses BuildKit, local registry, Kubernetes pod/service specs, and Docker Compose for local orchestration. |
 | Strict isolation | Kubernetes manifests use gVisor `runtimeClassName`, non-root containers, read-only root filesystems, dropped capabilities, and resource limits. |
 | CPU and memory limits | Docker Compose and Kubernetes manifests define CPU and memory constraints for platform and contestant workloads. |
-| Distributed bot fleet | Async bot coordinator supports REST, WebSocket, and FIX adapters with deterministic scenario seeds. |
+| Distributed bot fleet | Async bot coordinator runs deterministic REST order-flow scenarios; FIX support is a lightweight adapter path and is not the default production benchmark protocol. |
 | Order types | Limit, market, and cancel actions are represented in bot scenarios and validator flows. |
 | Telemetry | Envoy captures request latency headers and access logs; ingester persists records to TimescaleDB. |
 | Latency metrics | Timescale hypertables and continuous aggregate expose p50, p90, and p99 latency windows. |
@@ -97,14 +97,14 @@ development uses Docker Compose. Production deployment targets Kubernetes with:
 ### Bot Fleet
 
 The bot fleet generates concurrent market traffic using deterministic scenarios.
-The coordinator supports REST, WebSocket, and a lightweight FIX execution-report
-adapter so protocol selection does not crash at runtime.
+The production benchmark path uses REST order requests. A lightweight FIX adapter
+exists for compatibility experiments, but it is not the default scoring path.
 
 The bot layer records:
 
 - total requests
 - success and error counts
-- p50 and p99 latency
+- p50, p90, and p99 latency
 - throughput over the benchmark interval
 - circuit-breaker state when a target becomes unhealthy
 
@@ -203,8 +203,7 @@ UORA is structured so local services map cleanly to a cloud deployment:
 Before a judged or production run, verify:
 
 - `docker compose ps` shows Redis, TimescaleDB, BuildKit, builder, ingester, Envoy, and submission healthy.
-- `docker exec uora-redis redis-cli -a uora12345 ping` returns `PONG`.
+- `docker exec uora-redis redis-cli -a "$REDIS_PASSWORD" ping` returns `PONG`.
 - `curl http://localhost:8000/health` returns the submission service health payload.
 - `curl -N http://localhost:3000/api/leaderboard` streams typed `metrics` and `leaderboard` events during an active benchmark.
 - `python3 test_integration.py` completes with zero validation violations against the reference server.
-
