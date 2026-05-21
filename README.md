@@ -8,8 +8,8 @@
 ## Core Architecture
 
 1. **Absolute Security Sandbox**: Uses `gVisor (runsc)`, rootless BuildKit, and `seccomp-bpf` deny-by-default profiles to strictly isolate untrusted submitted binaries. No escaping to the host kernel.
-2. **Hyper-Scale Throughput**: Demonstrated **69,348 orders/sec** via a vertically scaled `asyncio` Bot Fleet orchestrator.
-3. **ML Anomaly Detection**: Employs an Isolation Forest model tracking 8 distinct entropy and latency features to instantly flag hardcoded cheating, memory leaks, or erratic engine crashes.
+2. **Benchmark Orchestration**: Uses an `asyncio` bot fleet and Redis benchmark queue to replay deterministic REST order flow against deployed engines.
+3. **ML Anomaly Detection**: Employs an Isolation Forest model tracking benchmark feature vectors to flag runs that need review.
 4. **Mathematical Correctness**: Real-time cross-validation against a shadow reference Limit Order Book (LOB) using Graph Edit Distance (GED) on L3 states to guarantee strict Price-Time priority.
 5. **Real-time Telemetry & Scoring**: Async metrics streaming directly into TimescaleDB and pushed to a Next.js live leaderboard via Redis Pub/Sub, culminating in an automated PDF scorecard.
 
@@ -40,21 +40,18 @@ pip install -e ".[dev]"
 docker-compose up -d timescaledb redis minio buildkitd registry
 
 # 3. Start services
-docker-compose up -d submission builder envoy
+docker-compose up -d submission builder benchmarker envoy
 
 # 4. Start the reference server (for testing)
 python contestant_sdk/python/reference_server.py &
 
-# 5. Start the leaderboard mock publisher
-python uora/leaderboard/mock_publisher.py &
-
-# 6. Start the Next.js leaderboard
+# 5. Start the Next.js leaderboard
 cd uora/leaderboard && npm install && npm run dev
 
-# 7. Run the full test suite
+# 6. Run the full test suite
 make test
 
-# 8. Run a benchmark
+# 7. Run a benchmark
 make benchmark
 ```
 
