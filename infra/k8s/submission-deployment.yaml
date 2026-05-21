@@ -5,16 +5,6 @@ metadata:
   name: uora-builder
   namespace: uora
 ---
-# --- Shared Runtime Secrets (override these values outside local clusters) ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: uora-builder-secrets
-  namespace: uora
-type: Opaque
-stringData:
-  redis-password: uora12345
----
 # --- Role for Builder (minimal permissions) ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
