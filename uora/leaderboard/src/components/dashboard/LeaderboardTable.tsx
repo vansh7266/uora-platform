@@ -285,7 +285,7 @@ export function LeaderboardTable() {
                     <Cpu className="w-8 h-8 text-slate-700 animate-pulse" />
                     <p className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">Awaiting Telemetry Stream...</p>
                     <p className="text-[10px] font-mono text-slate-600 max-w-md mx-auto leading-relaxed">
-                      No matching engines currently scored. Transmit proprietary code files in the Submit portal to initialize concurrency load simulation and scoring.
+                      No matching engines currently scored. Submit source in the Submit portal to start the build, benchmark, validation, and scoring pipeline.
                     </p>
                   </div>
                 </td>
@@ -310,7 +310,7 @@ export function LeaderboardTable() {
                 <DetailCard
                   icon={<Clock className="w-4 h-4" />}
                   label="P50 Latency"
-                  value={formatLatency(selectedEntry.p50_latency_ms ?? selectedEntry.p99_latency_ms * 0.4)}
+                  value={formatLatency(selectedEntry.p50_latency_ms ?? 0)}
                   color="text-uora-cyan"
                 />
                 <DetailCard
