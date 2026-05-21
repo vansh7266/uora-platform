@@ -44,7 +44,7 @@ export function AnomalyPulseDetector() {
 
   const option = useMemo(() => {
     const pulseIntensity = isCritical ? 0.8 : isWarning ? 0.4 : 0.15;
-    const ringColor = isCritical ? "#EF4444" : "#06B6D4";
+    const ringColor = isCritical ? "#EF4444" : "#E2B53E";
 
     return {
       backgroundColor: "transparent",
@@ -90,7 +90,7 @@ export function AnomalyPulseDetector() {
                       offset: 1,
                       color: isCritical
                         ? "rgba(239, 68, 68, 0.2)"
-                        : "rgba(6, 182, 212, 0.2)",
+                        : "rgba(226, 181, 62, 0.2)",
                     },
                   ],
                 },
@@ -140,16 +140,16 @@ export function AnomalyPulseDetector() {
               areaStyle: {
                 color: isCritical
                   ? "rgba(239, 68, 68, 0.15)"
-                  : "rgba(6, 182, 212, 0.1)",
+                  : "rgba(226, 181, 62, 0.1)",
               },
               lineStyle: {
                 color: isCritical
                   ? "rgba(239, 68, 68, 0.6)"
-                  : "rgba(6, 182, 212, 0.4)",
+                  : "rgba(226, 181, 62, 0.4)",
                 width: 1.5,
               },
               itemStyle: {
-                color: isCritical ? "#EF4444" : "#06B6D4",
+                color: isCritical ? "#EF4444" : "#E2B53E",
                 borderWidth: 0,
               },
               symbol: "circle",
@@ -166,7 +166,7 @@ export function AnomalyPulseDetector() {
       animate={isShaking ? { x: [-2, 2, -2, 2, 0] } : {}}
       transition={{ duration: 0.3 }}
       className={cn(
-        "bg-uora-surface border rounded-xl overflow-hidden transition-all duration-500",
+        "bg-uora-surface border rounded-md overflow-hidden transition-all duration-500 shadow-lg",
         isCritical
           ? "border-uora-error/50 glow-red-sm"
           : isWarning
@@ -174,19 +174,19 @@ export function AnomalyPulseDetector() {
           : "border-uora-border"
       )}
     >
-      <div className="px-5 py-4 border-b border-uora-border flex items-center justify-between">
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
         <div className="flex items-center gap-2">
           <Radar
             className={cn(
               "w-4 h-4",
-              isCritical ? "text-uora-error" : "text-uora-cyan"
+              isCritical ? "text-uora-error" : "text-uora-cyan animate-pulse"
             )}
           />
-          <h3 className="text-sm font-semibold">Anomaly Pulse Detector</h3>
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Anomaly Pulse Detector</h3>
         </div>
         <div
           className={cn(
-            "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] font-mono border",
+            "flex items-center gap-2 px-2.5 py-0.5 rounded border text-[10px] font-mono",
             isCritical
               ? "bg-uora-error/10 text-uora-error border-uora-error/20"
               : isWarning
@@ -204,11 +204,11 @@ export function AnomalyPulseDetector() {
                 : "bg-uora-success"
             )}
           />
-          {isCritical ? "CRITICAL" : isWarning ? "WARNING" : "NOMINAL"}
+          <span>{isCritical ? "CRITICAL" : isWarning ? "WARNING" : "NOMINAL"}</span>
         </div>
       </div>
 
-      <div className="p-2 relative">
+      <div className="p-2 relative bg-uora-bg/10">
         {/* Anomaly flash overlay */}
         <AnimatePresence>
           {isCritical && (
@@ -224,7 +224,7 @@ export function AnomalyPulseDetector() {
 
         <ReactECharts
           option={option}
-          style={{ height: "300px", width: "100%" }}
+          style={{ height: "290px", width: "100%" }}
           opts={{ renderer: "canvas" }}
           notMerge={true}
           lazyUpdate={true}
@@ -232,12 +232,12 @@ export function AnomalyPulseDetector() {
       </div>
 
       {/* Anomaly Score Display */}
-      <div className="px-5 pb-4">
+      <div className="px-5 pb-5">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-slate-500">Isolation Forest Score</span>
+          <span className="text-[10px] font-mono text-slate-500 uppercase">Isolation Forest Score</span>
           <span
             className={cn(
-              "font-mono font-bold text-sm",
+              "font-mono font-bold text-xs",
               isCritical
                 ? "text-uora-error"
                 : isWarning
@@ -248,7 +248,7 @@ export function AnomalyPulseDetector() {
             {(currentMaxScore * 100).toFixed(1)}%
           </span>
         </div>
-        <div className="h-2 bg-uora-elevated rounded-full overflow-hidden">
+        <div className="h-1.5 bg-uora-elevated rounded-full overflow-hidden">
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${currentMaxScore * 100}%` }}
@@ -265,8 +265,8 @@ export function AnomalyPulseDetector() {
         </div>
 
         {/* Latest anomaly events */}
-        {anomalies.length > 0 && (
-          <div className="mt-3 space-y-1.5 max-h-24 overflow-y-auto">
+        {anomalies.length > 0 ? (
+          <div className="mt-4 space-y-1.5 max-h-24 overflow-y-auto border-t border-uora-border/60 pt-3">
             {anomalies
               .slice(-3)
               .reverse()
@@ -275,7 +275,7 @@ export function AnomalyPulseDetector() {
                   key={`${anomaly.timestamp}-${idx}`}
                   initial={{ opacity: 0, x: 10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-2 text-[10px]"
+                  className="flex items-center gap-2 text-[10px] font-mono"
                 >
                   <AlertTriangle
                     className={cn(
@@ -285,12 +285,12 @@ export function AnomalyPulseDetector() {
                         : "text-uora-warning"
                     )}
                   />
-                  <span className="text-slate-400">
+                  <span className="text-slate-500">
                     {new Date(anomaly.timestamp).toLocaleTimeString()}
                   </span>
                   <span
                     className={cn(
-                      "font-mono",
+                      "font-semibold uppercase tracking-tight",
                       anomaly.score > 0.7
                         ? "text-uora-error"
                         : "text-slate-300"
@@ -298,11 +298,15 @@ export function AnomalyPulseDetector() {
                   >
                     {anomaly.type.replace(/_/g, " ")}
                   </span>
-                  <span className="text-slate-500 ml-auto font-mono">
+                  <span className="text-slate-500 ml-auto">
                     {(anomaly.score * 100).toFixed(0)}%
                   </span>
                 </motion.div>
               ))}
+          </div>
+        ) : (
+          <div className="mt-4 text-center text-[10px] font-mono text-slate-600 border-t border-uora-border/60 pt-3 uppercase">
+            No anomalous transaction patterns detected
           </div>
         )}
       </div>
