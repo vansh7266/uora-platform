@@ -83,30 +83,30 @@ export function LiveOrderbookDepth() {
     return {
       backgroundColor: "transparent",
       grid: {
-        top: 50,
+        top: 40,
         right: 20,
         bottom: 40,
-        left: 70,
+        left: 60,
       },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#111827",
+        backgroundColor: "#0F1117",
         borderColor: "#1E293B",
         borderWidth: 1,
         textStyle: {
-          color: "#E2E8F0",
+          color: "#F8FAFC",
           fontSize: 11,
           fontFamily: "JetBrains Mono, monospace",
         },
         formatter: (params: Array<{ seriesName: string; value: number; color: string; axisValue?: string }>) => {
           const price = params[0]?.axisValue ?? "";
-          let result = `<div style="font-size:11px;margin-bottom:4px;color:#94A3B8">Price: ${price}</div>`;
+          let result = `<div style="font-size:10px;margin-bottom:4px;color:#64748B;font-family:JetBrains Mono">Price: ${price}</div>`;
           params.forEach((p) => {
-            const color = p.seriesName.includes("Bid") ? "#06B6D4" : "#EF4444";
-            result += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">
-              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
+            const color = p.seriesName.includes("Bid") ? "#10B981" : "#EF4444";
+            result += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-family:JetBrains Mono">
+              <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color}"></span>
               <span style="color:#94A3B8">${p.seriesName}:</span>
-              <span style="color:#E2E8F0;font-weight:bold;font-family:JetBrains Mono,monospace">${p.value}</span>
+              <span style="color:#F8FAFC;font-weight:bold;margin-left:auto">${p.value}</span>
             </div>`;
           });
           return result;
@@ -117,11 +117,11 @@ export function LiveOrderbookDepth() {
         top: 8,
         right: 20,
         textStyle: {
-          color: "#94A3B8",
-          fontSize: 10,
+          color: "#64748B",
+          fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
         },
-        itemWidth: 12,
+        itemWidth: 10,
         itemHeight: 2,
         itemGap: 12,
       },
@@ -184,7 +184,7 @@ export function LiveOrderbookDepth() {
           stack: "bid",
           data: [...bidLevels.map((l) => l.quantity).reverse(), ...askLevels.map(() => 0)],
           itemStyle: {
-            color: "rgba(6, 182, 212, 0.7)",
+            color: "rgba(16, 185, 129, 0.7)",
             borderRadius: [2, 2, 0, 0],
           },
           barWidth: "60%",
@@ -213,7 +213,7 @@ export function LiveOrderbookDepth() {
           symbol: "none",
           lineStyle: {
             width: 1.5,
-            color: "#06B6D4",
+            color: "#10B981",
             type: "dashed",
           },
           animationDuration: 400,
@@ -224,14 +224,14 @@ export function LiveOrderbookDepth() {
               {
                 xAxis: bidLevels.length - 0.5,
                 lineStyle: {
-                  color: "#F59E0B",
+                  color: "#E2B53E",
                   type: "solid",
-                  width: 2,
+                  width: 1.5,
                 },
                 label: {
                   formatter: "Spread",
-                  color: "#F59E0B",
-                  fontSize: 10,
+                  color: "#E2B53E",
+                  fontSize: 9,
                   fontFamily: "JetBrains Mono, monospace",
                 },
               },
@@ -270,28 +270,28 @@ export function LiveOrderbookDepth() {
   })();
 
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-uora-border flex items-center justify-between">
+    <div className="bg-uora-surface border border-uora-border rounded-md overflow-hidden shadow-lg">
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
         <div className="flex items-center gap-2">
-          <Layers className="w-4 h-4 text-uora-cyan" />
-          <h3 className="text-sm font-semibold">Live Orderbook Depth</h3>
+          <Layers className="w-4 h-4 text-uora-cyan animate-pulse" />
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Live Orderbook Depth</h3>
         </div>
         <div className="flex items-center gap-4 text-[10px] font-mono">
-          <div className="text-slate-500">
-            Spread: <span className="text-uora-warning">{spread}</span>
+          <div className="text-slate-500 uppercase">
+            Spread: <span className="text-uora-cyan font-bold">{spread}</span>
           </div>
-          <div className="text-slate-500">
+          <div className="text-slate-500 uppercase">
             Bias:{" "}
-            <span className={bidImbalance > 55 ? "text-uora-success" : bidImbalance < 45 ? "text-uora-error" : "text-slate-300"}>
-              {bidImbalance}% bid
+            <span className={bidImbalance > 55 ? "text-uora-success font-bold" : bidImbalance < 45 ? "text-uora-error font-bold" : "text-slate-300 font-bold"}>
+              {bidImbalance}% BID
             </span>
           </div>
         </div>
       </div>
-      <div className="p-2">
+      <div className="p-4 bg-uora-bg/15">
         <ReactECharts
           option={option}
-          style={{ height: "320px", width: "100%" }}
+          style={{ height: "280px", width: "100%" }}
           opts={{ renderer: "canvas" }}
           notMerge={true}
           lazyUpdate={true}
