@@ -99,19 +99,8 @@ export default function AuthPage() {
 
       const errData = await res.json().catch(() => null);
       setError(errData?.detail || `Authentication failed (${res.status})`);
-    } catch {
-      setError("Authentication service is offline. Directing to simulated local credentials.");
-      // Fallback local mode for offline resilience
-      setTimeout(() => {
-        login({
-          id: `local-${Date.now()}`,
-          name: name || "Quant Engineer",
-          email: email,
-          avatar: "",
-          team: team || "Prop Firm Alpha",
-        });
-        router.push("/dashboard");
-      }, 800);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Authentication service is unavailable");
     } finally {
       setLoading(false);
     }
@@ -227,7 +216,7 @@ export default function AuthPage() {
                     <input
                       id="auth-team"
                       type="text"
-                      placeholder="Prop Firm / Team ID"
+                      placeholder="Team ID"
                       value={team}
                       onChange={(e) => setTeam(e.target.value)}
                       className="w-full pl-11 pr-4 py-2.5 rounded-md bg-uora-bg border border-uora-border text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:border-uora-cyan/50 focus:shadow-[0_0_10px_rgba(226,181,62,0.08)] outline-none transition-all"
