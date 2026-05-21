@@ -14,7 +14,15 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { cn, getLanguageBg } from "@/lib/utils";
 
-type SubmissionStatus = "queued" | "building" | "built" | "deployed" | "failed";
+type SubmissionStatus =
+  | "queued"
+  | "building"
+  | "built"
+  | "deployed"
+  | "benchmarking"
+  | "validating"
+  | "scored"
+  | "failed";
 
 const LANGUAGE_MAP: Record<string, string> = {
   ".cpp": "cpp",
@@ -33,11 +41,6 @@ const LANGUAGE_LABEL: Record<string, string> = {
 function detectLanguage(filename: string): string | null {
   const ext = filename.substring(filename.lastIndexOf("."));
   return LANGUAGE_MAP[ext] || null;
-}
-
-// Pure helper wrappers extracted to module scope to satisfy strict linter / compiler rules
-function generateSubmissionId(): string {
-  return `sub-${Math.random().toString(36).substring(2, 8)}`;
 }
 
 function getNowTimestamp(queuedAt?: string): number {
@@ -73,15 +76,6 @@ export function SubmissionPanel() {
     [handleFileSelect]
   );
 
-  const simulateOfflinePipeline = useCallback((id: string) => {
-    const sequence: SubmissionStatus[] = ["building", "built", "deployed"];
-    sequence.forEach((status, idx) => {
-      setTimeout(() => {
-        updateSubmissionStatus(id, status);
-      }, (idx + 1) * 3500);
-    });
-  }, [updateSubmissionStatus]);
-
   const pollSubmissionStatus = useCallback((id: string, apiBase: string) => {
     let attempts = 0;
     const poll = setInterval(async () => {
@@ -97,8 +91,8 @@ export function SubmissionPanel() {
         if (res.ok) {
           const data = await res.json();
           const status = data.status as SubmissionStatus;
-          updateSubmissionStatus(id, status);
-          if (status === "deployed" || status === "failed") {
+          updateSubmissionStatus(id, status, data.error);
+          if (status === "scored" || status === "failed") {
             clearInterval(poll);
           }
         }
@@ -113,8 +107,6 @@ export function SubmissionPanel() {
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmitSuccess(null);
-
-    const submissionId = generateSubmissionId();
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -131,7 +123,10 @@ export function SubmissionPanel() {
 
       if (res.ok) {
         const data = await res.json();
-        const realId = data.submission_id || submissionId;
+        const realId = data.submission_id;
+        if (!realId) {
+          throw new Error("Submission API did not return a submission id");
+        }
 
         addSubmission({
           id: realId,
@@ -141,7 +136,7 @@ export function SubmissionPanel() {
           submittedAt: getNowTimestamp(data.queued_at),
         });
 
-        setSubmitSuccess(`Gateway established: submission ${realId.slice(0, 8)} compiled.`);
+        setSubmitSuccess(`Submission ${realId.slice(0, 8)} queued for isolated evaluation.`);
         setFile(null);
         setLanguage(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -153,28 +148,12 @@ export function SubmissionPanel() {
 
       const errData = await res.json().catch(() => null);
       throw new Error(errData?.detail || `Upload failed (${res.status})`);
-    } catch {
-      // Offline fallback simulation to keep the UI perfectly active
-      const realId = submissionId;
-      addSubmission({
-        id: realId,
-        team: user?.team || "Prop Firm Alpha",
-        language,
-        status: "queued",
-        submittedAt: getNowTimestamp(),
-      });
-
-      setSubmitSuccess(`Simulated gateway: submission ${realId} queued locally.`);
-      setFile(null);
-      setLanguage(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-
-      // Simulate status timeline transition
-      simulateOfflinePipeline(realId);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Submission failed");
     } finally {
       setIsSubmitting(false);
     }
-  }, [file, language, addSubmission, user, simulateOfflinePipeline, pollSubmissionStatus]);
+  }, [file, language, addSubmission, user, pollSubmissionStatus]);
 
   if (!isAuthenticated) {
     return (
