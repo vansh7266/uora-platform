@@ -11,16 +11,16 @@ const config: Config = {
     extend: {
       colors: {
         uora: {
-          bg: "#05080D",
-          surface: "#101823",
-          elevated: "#152132",
-          cyan: "#39D5C3",
-          blue: "#58A6FF",
-          success: "#46D39A",
-          warning: "#F6B84B",
-          error: "#F87171",
-          border: "#253449",
-          "border-light": "#3A4E6A",
+          bg: "#08090C",
+          surface: "#0F1117",
+          elevated: "#171C26",
+          cyan: "#E2B53E",
+          blue: "#3B82F6",
+          success: "#10B981",
+          warning: "#F59E0B",
+          error: "#EF4444",
+          border: "#1E293B",
+          "border-light": "#334155",
         },
       },
       fontFamily: {
