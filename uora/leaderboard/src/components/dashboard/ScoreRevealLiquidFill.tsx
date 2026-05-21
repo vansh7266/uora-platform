@@ -14,43 +14,43 @@ export function ScoreRevealLiquidFill() {
   const scoreWidth = Math.max(0, Math.min(100, score));
 
   const tier =
-    score >= 90 ? "Elite" :
-    score >= 75 ? "Advanced" :
-    score >= 50 ? "Stable" :
-    score > 0 ? "Developing" :
-    "No Runs";
+    score >= 90 ? "ELITE" :
+    score >= 75 ? "ADVANCED" :
+    score >= 50 ? "STABLE" :
+    score > 0 ? "DEVELOPING" :
+    "OFFLINE";
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[#253449] bg-[#101823] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="flex items-center justify-between border-b border-[#223047] px-5 py-4">
+    <div className="overflow-hidden rounded-md border border-uora-border bg-uora-surface shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+      <div className="flex items-center justify-between border-b border-uora-border/60 px-5 py-4 bg-uora-bg/30">
         <div className="flex items-center gap-2">
-          <Trophy className="h-4 w-4 text-uora-warning" />
-          <h3 className="text-sm font-semibold text-slate-100">Composite Score</h3>
+          <Trophy className="h-4 w-4 text-uora-cyan" />
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Composite Leader</h3>
         </div>
-        <div className="rounded-md border border-[#2a3a50] bg-[#0b1119] px-2.5 py-1 font-mono text-[11px] text-slate-300">
+        <div className="rounded border border-uora-border bg-uora-bg px-2.5 py-0.5 font-mono text-[10px] font-bold text-uora-cyan">
           {tier}
         </div>
       </div>
 
       <div className="p-5">
         <div className="flex items-end justify-between gap-4">
-          <div>
-            <div className="font-mono text-xs uppercase tracking-[0.14em] text-slate-500">
-              Leading Submission
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
+              LEADING SUBMISSION
             </div>
-            <div className="mt-2 max-w-52 truncate text-lg font-semibold text-white">
-              {topTeam?.team || topTeam?.submission_id || "Awaiting benchmark"}
+            <div className="mt-2 truncate font-mono text-base font-bold text-white">
+              {topTeam?.team || topTeam?.submission_id.slice(0, 12) || "AWAITING RUNS"}
             </div>
           </div>
-          <div className="text-right">
-            <div className="font-mono text-5xl font-bold tabular-nums text-uora-cyan">
+          <div className="text-right flex-shrink-0">
+            <div className="font-mono text-4xl font-bold tracking-tight text-uora-cyan">
               {score ? score.toFixed(1) : "0.0"}
             </div>
-            <div className="mt-1 text-xs text-slate-500">out of 100</div>
+            <div className="mt-0.5 text-[9px] font-mono text-slate-500 uppercase">SCORE UNIT</div>
           </div>
         </div>
 
-        <div className="mt-6 h-3 overflow-hidden rounded-full bg-[#071018] ring-1 ring-[#243449]">
+        <div className="mt-6 h-2.5 overflow-hidden rounded-full bg-uora-bg ring-1 ring-uora-border">
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${scoreWidth}%` }}
@@ -59,15 +59,15 @@ export function ScoreRevealLiquidFill() {
           />
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          <Metric label="P99" value={topTeam ? `${topTeam.p99_latency_ms.toFixed(2)}ms` : "---"} />
-          <Metric label="TPS" value={topTeam ? topTeam.throughput.toLocaleString() : "---"} />
-          <Metric label="Correct" value={topTeam ? `${(topTeam.correctness_rate * 100).toFixed(1)}%` : "---"} />
+        <div className="mt-6 grid grid-cols-3 gap-2.5">
+          <Metric label="P99 TAIL" value={topTeam ? `${topTeam.p99_latency_ms.toFixed(2)}ms` : "---"} />
+          <Metric label="THROUGHPUT" value={topTeam ? `${(topTeam.throughput / 1000).toFixed(1)}K/s` : "---"} />
+          <Metric label="CORRECT" value={topTeam ? `${(topTeam.correctness_rate * 100).toFixed(1)}%` : "---"} />
         </div>
 
-        <div className="mt-5 flex items-center gap-2 rounded-lg border border-[#253449] bg-[#0b1119] px-4 py-3 text-sm text-slate-400">
-          <Gauge className="h-4 w-4 text-uora-cyan" />
-          Composite ranking rewards speed, tail stability, correctness, and anomaly resistance.
+        <div className="mt-5 flex items-start gap-2.5 rounded border border-uora-border bg-uora-bg/60 p-3 text-[10px] font-mono text-slate-500 leading-normal">
+          <Gauge className="h-4 w-4 text-uora-cyan flex-shrink-0 mt-0.5" />
+          <span>COMPOSITE SCORING REWARDS MASSIVE CONCURRENCY THROTTLE, SLA TAIL STABILITY, STRICT TRANSACTION CORRECTNESS, AND EXTREME ANOMALY RESISTANCE.</span>
         </div>
       </div>
     </div>
@@ -76,10 +76,9 @@ export function ScoreRevealLiquidFill() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#253449] bg-[#0b1119] p-3">
-      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      <div className="mt-2 truncate font-mono text-sm font-semibold text-slate-100">{value}</div>
+    <div className="rounded border border-uora-border bg-uora-bg p-3 min-w-0">
+      <div className="font-mono text-[9px] uppercase tracking-wider text-slate-500 truncate">{label}</div>
+      <div className="mt-2 truncate font-mono text-xs font-bold text-slate-200">{value}</div>
     </div>
   );
 }
-
