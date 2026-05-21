@@ -24,12 +24,12 @@ export function LatencyChart() {
       },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#111827",
+        backgroundColor: "#0F1117",
         borderColor: "#1E293B",
         borderWidth: 1,
         textStyle: {
-          color: "#E2E8F0",
-          fontSize: 12,
+          color: "#F8FAFC",
+          fontSize: 11,
           fontFamily: "JetBrains Mono, monospace",
         },
         axisPointer: {
@@ -42,12 +42,12 @@ export function LatencyChart() {
           },
         },
         formatter: (params: Array<{ seriesName: string; value: number; color: string; axisValue?: string }>) => {
-          let result = `<div style="font-size:11px;margin-bottom:4px;color:#94A3B8">${params[0]?.axisValue ?? ""}</div>`;
+          let result = `<div style="font-size:10px;margin-bottom:4px;color:#64748B;font-family:JetBrains Mono">${params[0]?.axisValue ?? ""}</div>`;
           params.forEach((p) => {
-            result += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">
-              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>
+            result += `<div style="display:flex;align-items:center;gap:6px;margin:2px 0;font-family:JetBrains Mono">
+              <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${p.color}"></span>
               <span style="color:#94A3B8">${p.seriesName}:</span>
-              <span style="color:#E2E8F0;font-weight:bold;font-family:JetBrains Mono,monospace">${p.value.toFixed(3)}ms</span>
+              <span style="color:#F8FAFC;font-weight:bold;margin-left:auto">${p.value.toFixed(3)}ms</span>
             </div>`;
           });
           return result;
@@ -58,8 +58,8 @@ export function LatencyChart() {
         top: 8,
         right: 20,
         textStyle: {
-          color: "#94A3B8",
-          fontSize: 11,
+          color: "#64748B",
+          fontSize: 10,
           fontFamily: "JetBrains Mono, monospace",
         },
         itemWidth: 12,
@@ -74,7 +74,7 @@ export function LatencyChart() {
         axisTick: { show: false },
         axisLabel: {
           color: "#64748B",
-          fontSize: 10,
+          fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
           interval: Math.max(0, Math.floor(timestamps.length / 6) - 1),
         },
@@ -87,14 +87,14 @@ export function LatencyChart() {
         name: "ms",
         nameTextStyle: {
           color: "#64748B",
-          fontSize: 10,
+          fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
         },
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
           color: "#64748B",
-          fontSize: 10,
+          fontSize: 9,
           fontFamily: "JetBrains Mono, monospace",
         },
         splitLine: {
@@ -112,8 +112,8 @@ export function LatencyChart() {
           smooth: 0.4,
           symbol: "none",
           lineStyle: {
-            width: 2,
-            color: "#39D5C3",
+            width: 1.5,
+            color: "#10B981", // Cyber Mint Green
           },
           areaStyle: {
             color: {
@@ -123,8 +123,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(57, 213, 195, 0.16)" },
-                { offset: 1, color: "rgba(57, 213, 195, 0.0)" },
+                { offset: 0, color: "rgba(16, 185, 129, 0.12)" },
+                { offset: 1, color: "rgba(16, 185, 129, 0.0)" },
               ],
             },
           },
@@ -138,8 +138,8 @@ export function LatencyChart() {
           smooth: 0.4,
           symbol: "none",
           lineStyle: {
-            width: 2,
-            color: "#58A6FF",
+            width: 1.5,
+            color: "#3B82F6", // Technical Cobalt Blue
           },
           areaStyle: {
             color: {
@@ -149,8 +149,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(88, 166, 255, 0.12)" },
-                { offset: 1, color: "rgba(88, 166, 255, 0.0)" },
+                { offset: 0, color: "rgba(59, 130, 246, 0.08)" },
+                { offset: 1, color: "rgba(59, 130, 246, 0.0)" },
               ],
             },
           },
@@ -165,7 +165,7 @@ export function LatencyChart() {
           symbol: "none",
           lineStyle: {
             width: 2,
-            color: "#F6B84B",
+            color: "#E2B53E", // Champagne Gold
           },
           areaStyle: {
             color: {
@@ -175,8 +175,8 @@ export function LatencyChart() {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: "rgba(246, 184, 75, 0.12)" },
-                { offset: 1, color: "rgba(246, 184, 75, 0.0)" },
+                { offset: 0, color: "rgba(226, 181, 62, 0.12)" },
+                { offset: 1, color: "rgba(226, 181, 62, 0.0)" },
               ],
             },
           },
@@ -196,7 +196,7 @@ export function LatencyChart() {
                 label: {
                   formatter: "SLA Limit",
                   color: "#EF4444",
-                  fontSize: 10,
+                  fontSize: 9,
                   fontFamily: "JetBrains Mono, monospace",
                 },
               },
@@ -210,33 +210,33 @@ export function LatencyChart() {
   }, [metrics]);
 
   return (
-    <div className="bg-uora-surface border border-uora-border rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-uora-border flex items-center justify-between">
+    <div className="bg-uora-surface border border-uora-border rounded-md overflow-hidden shadow-lg">
+      <div className="px-5 py-4 border-b border-uora-border/60 flex items-center justify-between bg-uora-bg/30">
         <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-uora-cyan" />
-          <h3 className="text-sm font-semibold">Latency Percentiles</h3>
+          <Activity className="w-4 h-4 text-uora-cyan animate-pulse" />
+          <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">Latency Percentiles</h3>
         </div>
-        <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+        <div className="flex items-center gap-4 text-[9px] font-mono text-slate-500">
           <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-0.5 rounded-full bg-[#39D5C3]" />
+            <span className="w-2.5 h-0.5 rounded-full bg-[#10B981]" />
             p50
           </div>
           <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-0.5 rounded-full bg-[#58A6FF]" />
+            <span className="w-2.5 h-0.5 rounded-full bg-[#3B82F6]" />
             p90
           </div>
           <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-0.5 rounded-full bg-[#F6B84B]" />
+            <span className="w-2.5 h-0.5 rounded-full bg-[#E2B53E]" />
             p99
           </div>
         </div>
       </div>
-      <div className="p-2">
+      <div className="p-4">
         {metrics.length < 2 ? (
-          <div className="grid h-[280px] place-items-center rounded-lg bg-[#0b1119] text-center">
+          <div className="grid h-[280px] place-items-center rounded-md bg-uora-bg/60 text-center border border-uora-border/40">
             <div>
-              <div className="text-sm font-semibold text-slate-300">Awaiting latency stream</div>
-              <div className="mt-1 text-xs text-slate-500">Start a benchmark or demo publisher to render percentiles.</div>
+              <div className="text-xs font-mono font-bold tracking-wider text-slate-400 uppercase">Awaiting telemetry stream</div>
+              <div className="mt-1.5 text-[10px] font-sans text-slate-600">Start simulated benchmark load to render realtime latency percentiles.</div>
             </div>
           </div>
         ) : (
