@@ -122,7 +122,7 @@ services:
       - build_net
     volumes:
       - buildkit_cache:/var/lib/buildkit
-    privileged: false
+    privileged: true   # buildkitd needs privilege for bind-mount snapshot operations
     mem_limit: 4g
     cpus: 4.0
     healthcheck:
