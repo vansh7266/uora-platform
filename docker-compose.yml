@@ -116,12 +116,13 @@ services:
   buildkitd:
     image: moby/buildkit:latest
     container_name: uora-buildkitd
-    command: --addr tcp://0.0.0.0:1234
+    command: --addr tcp://0.0.0.0:1234 --config /etc/buildkit/buildkitd.toml
     networks:
       - backend
       - build_net
     volumes:
       - buildkit_cache:/var/lib/buildkit
+      - ./infra/buildkitd.toml:/etc/buildkit/buildkitd.toml:ro
     privileged: true   # buildkitd needs privilege for bind-mount snapshot operations
     mem_limit: 4g
     cpus: 4.0
@@ -146,6 +147,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-uora}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-${MINIO_SECRET_KEY:?MINIO_ROOT_PASSWORD or MINIO_SECRET_KEY must be set}}
       - TIMESCALE_HOST=timescaledb
       - TIMESCALE_PORT=5432
       - TIMESCALE_USER=${TIMESCALE_USER:-uora}
