@@ -1,164 +1,233 @@
-/**
- * UORA Dummy Matching Engine — C++17
+/*
+ * UORA Contestant Submission — C++20 Matching Engine
  *
- * A minimal HTTP/1.1 matching engine that satisfies the UORA benchmark
- * protocol. Handles order submission, cancellation, and health probes.
+ * This implements a simple limit-order-book matching engine that
+ * follows price-time priority. It reads JSON orders from stdin
+ * and writes execution reports to stdout.
  *
- * Endpoints expected by the benchmarker:
- *   GET  /health               → {"status":"ok"}
- *   POST /api/v1/order         → {"status":"accepted","order_id":"..."}
- *   POST /api/v1/orders        → same as above (alias)
- *   DELETE /api/v1/order/{id}  → {"status":"cancelled","order_id":"..."}
- *   POST /api/v1/cancel        → {"status":"cancelled","order_id":"..."}
+ * Build: g++ -std=c++20 -O2 -o matching_engine matching_engine.cpp
+ * Run:   ./matching_engine < orders.jsonl
  */
 
-#include <arpa/inet.h>
-#include <csignal>
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <iostream>
-#include <netinet/in.h>
+#include <map>
 #include <sstream>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
 
-namespace {
+// --- Order Side ---
+enum class Side { BUY, SELL };
 
-volatile std::sig_atomic_t g_running = 1;
+// --- Order Structure ---
+struct Order {
+  uint64_t order_id;
+  Side side;
+  double price;
+  uint32_t quantity;
+  uint64_t timestamp_ns;
+  uint32_t remaining_qty;
+};
 
-void handle_signal(int) { g_running = 0; }
+// --- Execution Report ---
+struct Execution {
+  uint64_t order_id;
+  double price;
+  uint32_t filled_qty;
+  uint64_t counterparty_id;
+  std::string action; // "fill" or "open" or "cancel"
+};
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────────
+// --- Limit Order Book ---
+class OrderBook {
+private:
+  // Bids: sorted descending by price, then ascending by time
+  std::map<double, std::vector<Order>, std::greater<double>> bids_;
+  // Asks: sorted ascending by price, then ascending by time
+  std::map<double, std::vector<Order>> asks_;
 
-std::string make_response(const std::string &status, const std::string &body) {
-    std::ostringstream out;
-    out << "HTTP/1.1 " << status << "\r\n"
-        << "Content-Type: application/json\r\n"
-        << "Connection: close\r\n"
-        << "Content-Length: " << body.size() << "\r\n\r\n"
-        << body;
-    return out.str();
-}
+  std::vector<Execution> match_order(Order &incoming) {
+    std::vector<Execution> execs;
 
-// Extract the first token (method) and second token (path) from a request line.
-bool parse_request_line(const char *buf, std::string &method, std::string &path) {
-    const char *p = buf;
-    while (*p && *p != ' ') method += *p++;
-    if (*p) ++p;
-    while (*p && *p != ' ' && *p != '\r' && *p != '\n') path += *p++;
-    return !method.empty() && !path.empty();
-}
+    auto match_against_asks = [&](auto &book) {
+      for (auto it = book.begin();
+           it != book.end() && incoming.remaining_qty > 0;) {
+        double best_price = it->first;
 
-// ── Routing ──────────────────────────────────────────────────────────────────
+        // Check if price crosses
+        if (incoming.side == Side::BUY && best_price > incoming.price)
+          break;
+        if (incoming.side == Side::SELL && best_price < incoming.price)
+          break;
 
-std::string route(const char *buf, ssize_t len) {
-    if (len <= 0) return make_response("400 Bad Request", R"({"error":"empty_request"})");
+        auto &level = it->second;
+        for (auto lit = level.begin();
+             lit != level.end() && incoming.remaining_qty > 0;) {
+          uint32_t fill_qty =
+              std::min(incoming.remaining_qty, lit->remaining_qty);
 
-    std::string method, path;
-    if (!parse_request_line(buf, method, path)) {
-        return make_response("400 Bad Request", R"({"error":"malformed_request"})");
-    }
+          Execution exec;
+          exec.order_id = incoming.order_id;
+          exec.price = lit->price;
+          exec.filled_qty = fill_qty;
+          exec.counterparty_id = lit->order_id;
+          exec.action = "fill";
+          execs.push_back(exec);
 
-    // Health probe
-    if (method == "GET" && (path == "/health" || path == "/healthz")) {
-        return make_response("200 OK",
-            R"({"status":"ok","engine":"uora-dummy-cpp","version":"1.0.0"})");
-    }
+          lit->remaining_qty -= fill_qty;
+          incoming.remaining_qty -= fill_qty;
 
-    // Order submission
-    if (method == "POST" &&
-        (path == "/api/v1/order" || path == "/api/v1/orders")) {
-        static uint64_t order_seq = 1;
-        char oid[32];
-        std::snprintf(oid, sizeof(oid), "ORD-%08llu",
-                      static_cast<unsigned long long>(order_seq++));
-        std::string body = std::string(R"({"status":"accepted","order_id":")") +
-                           oid + R"(","filled_qty":0,"remaining_qty":1})";
-        return make_response("200 OK", body);
-    }
-
-    // Order cancellation (REST: DELETE /api/v1/order/{id})
-    if (method == "DELETE" && path.rfind("/api/v1/order", 0) == 0) {
-        std::string oid = path.size() > 14 ? path.substr(14) : "unknown";
-        std::string body = R"({"status":"cancelled","order_id":")" + oid + R"("})";
-        return make_response("200 OK", body);
-    }
-
-    // Order cancellation (POST /api/v1/cancel)
-    if (method == "POST" && path == "/api/v1/cancel") {
-        return make_response("200 OK",
-            R"({"status":"cancelled","order_id":"dummy-ack"})");
-    }
-
-    // Orderbook snapshot
-    if (method == "GET" && (path == "/api/v1/orderbook" ||
-                             path.rfind("/api/v1/orderbook", 0) == 0)) {
-        return make_response("200 OK",
-            R"({"bids":[[99.5,100],[99.0,200]],"asks":[[100.5,100],[101.0,200]]})");
-    }
-
-    return make_response("404 Not Found", R"({"error":"route_not_found"})");
-}
-
-// ── Server loop ──────────────────────────────────────────────────────────────
-
-constexpr int PORT = 8080;
-constexpr int BACKLOG = 512;
-
-}  // namespace
-
-int main() {
-    std::signal(SIGINT,  handle_signal);
-    std::signal(SIGTERM, handle_signal);
-
-    int server_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) { std::cerr << "socket() failed\n"; return 1; }
-
-    int opt = 1;
-    ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    sockaddr_in addr{};
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port        = htons(PORT);
-
-    if (::bind(server_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-        std::cerr << "bind() failed on port " << PORT << "\n";
-        ::close(server_fd);
-        return 1;
-    }
-
-    if (::listen(server_fd, BACKLOG) < 0) {
-        std::cerr << "listen() failed\n";
-        ::close(server_fd);
-        return 1;
-    }
-
-    std::cout << "UORA dummy engine listening on port " << PORT << "\n";
-    std::cout.flush();
-
-    while (g_running) {
-        sockaddr_in client{};
-        socklen_t   client_len = sizeof(client);
-        int client_fd = ::accept(server_fd,
-                                  reinterpret_cast<sockaddr *>(&client),
-                                  &client_len);
-        if (client_fd < 0) {
-            if (g_running) std::cerr << "accept() failed\n";
-            continue;
+          if (lit->remaining_qty == 0) {
+            lit = level.erase(lit);
+          } else {
+            ++lit;
+          }
         }
 
-        char buf[16384];
-        std::memset(buf, 0, sizeof(buf));
-        const ssize_t n = ::recv(client_fd, buf, sizeof(buf) - 1, 0);
+        if (level.empty()) {
+          it = book.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    };
 
-        const std::string reply = route(buf, n);
-        ::send(client_fd, reply.data(), reply.size(), MSG_NOSIGNAL);
-        ::close(client_fd);
+    if (incoming.side == Side::BUY) {
+      match_against_asks(asks_);
+    } else {
+      match_against_asks(bids_);
     }
 
-    ::close(server_fd);
-    std::cout << "Shutting down cleanly.\n";
-    return 0;
+    return execs;
+  }
+
+public:
+  std::vector<Execution> process(Order order) {
+    auto execs = match_order(order);
+
+    // If remaining qty, add to book
+    if (order.remaining_qty > 0) {
+      Execution open_exec;
+      open_exec.order_id = order.order_id;
+      open_exec.price = order.price;
+      open_exec.filled_qty = 0;
+      open_exec.counterparty_id = 0;
+      open_exec.action = "open";
+      execs.push_back(open_exec);
+
+      if (order.side == Side::BUY) {
+        bids_[order.price].push_back(order);
+      } else {
+        asks_[order.price].push_back(order);
+      }
+    }
+
+    return execs;
+  }
+
+  // Get best bid/ask
+  double best_bid() const {
+    if (bids_.empty())
+      return 0.0;
+    return bids_.begin()->first;
+  }
+
+  double best_ask() const {
+    if (asks_.empty())
+      return 0.0;
+    return asks_.begin()->first;
+  }
+
+  uint32_t bid_depth() const {
+    uint32_t total = 0;
+    for (const auto &[_, orders] : bids_) {
+      for (const auto &o : orders)
+        total += o.remaining_qty;
+    }
+    return total;
+  }
+
+  uint32_t ask_depth() const {
+    uint32_t total = 0;
+    for (const auto &[_, orders] : asks_) {
+      for (const auto &o : orders)
+        total += o.remaining_qty;
+    }
+    return total;
+  }
+};
+
+// --- Simple JSON parser for order input ---
+Order parse_order(const std::string &line) {
+  Order o;
+  o.remaining_qty = 0;
+
+  // Minimal JSON parsing — extracts values between quotes/colons
+  auto extract = [&](const std::string &key) -> std::string {
+    auto pos = line.find("\"" + key + "\"");
+    if (pos == std::string::npos)
+      return "";
+    pos = line.find(":", pos + key.size() + 2);
+    if (pos == std::string::npos)
+      return "";
+    pos++;
+    while (pos < line.size() && (line[pos] == ' ' || line[pos] == '"'))
+      pos++;
+    std::string val;
+    while (pos < line.size() && line[pos] != ',' && line[pos] != '}' &&
+           line[pos] != '"') {
+      val += line[pos++];
+    }
+    return val;
+  };
+
+  o.order_id = std::stoull(extract("order_id"));
+  o.price = std::stod(extract("price"));
+  o.quantity = std::stoul(extract("qty"));
+  o.remaining_qty = o.quantity;
+  o.timestamp_ns = std::stoull(extract("timestamp"));
+
+  std::string side = extract("side");
+  o.side = (side == "BUY" || side == "buy") ? Side::BUY : Side::SELL;
+
+  return o;
+}
+
+int main() {
+  OrderBook book;
+  std::string line;
+
+  // Process orders from stdin (JSONL format)
+  while (std::getline(std::cin, line)) {
+    if (line.empty() || line[0] == '#')
+      continue;
+
+    try {
+      Order order = parse_order(line);
+      auto execs = book.process(order);
+
+      // Output execution reports as JSONL
+      for (const auto &exec : execs) {
+        std::cout << "{\"order_id\":" << exec.order_id
+                  << ",\"price\":" << exec.price
+                  << ",\"filled_qty\":" << exec.filled_qty
+                  << ",\"counterparty\":" << exec.counterparty_id
+                  << ",\"action\":\"" << exec.action << "\""
+                  << ",\"best_bid\":" << book.best_bid()
+                  << ",\"best_ask\":" << book.best_ask() << "}\n";
+      }
+    } catch (...) {
+      std::cerr << "ERROR: Failed to parse order: " << line << "\n";
+    }
+  }
+
+  // Final state report
+  std::cout << "{\"status\":\"complete\""
+            << ",\"best_bid\":" << book.best_bid()
+            << ",\"best_ask\":" << book.best_ask()
+            << ",\"bid_depth\":" << book.bid_depth()
+            << ",\"ask_depth\":" << book.ask_depth() << "}\n";
+
+  return 0;
 }
