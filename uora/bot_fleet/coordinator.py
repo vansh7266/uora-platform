@@ -128,7 +128,7 @@ class BotCoordinator:
                         })
                         self._errors += 1
                         completed += 1
-                        logger.debug("Worker %d error: %s", worker_id, exc)
+                        logger.error("Worker %d action dispatch failed: %s. Action: %s", worker_id, exc, action)
 
                 await asyncio.sleep(rng.uniform(_MIN_DELAY, _MAX_DELAY))
 
@@ -171,15 +171,21 @@ class BotCoordinator:
     # ── Internal dispatch ──────────────────────────────────────────────────────
 
     async def _dispatch(self, bot: TradingBot, action: dict[str, Any]) -> dict[str, Any]:
-        t = action.get("type", "").lower()
-        if t == "limit":
+        t = action.get("type", "")
+        t_lower = str(t).lower() if t is not None else ""
+        known_types = {"limit", "market", "ioc", "fok", "cancel"}
+        if t_lower not in known_types:
+            logger.error("Unknown action type: %s", action.get("type"))
+            raise ValueError(f"Unknown action type: {action.get('type')!r}")
+
+        if t_lower == "limit":
             return await bot.send_limit_order(action["side"], float(action["price"]), _action_qty(action))
-        if t == "market":
+        if t_lower == "market":
             return await bot.send_market_order(action["side"], _action_qty(action))
-        if t == "ioc":
+        if t_lower == "ioc":
             return await bot.send_ioc_order(action["side"], float(action["price"]), _action_qty(action))
-        if t == "fok":
+        if t_lower == "fok":
             return await bot.send_fok_order(action["side"], float(action["price"]), _action_qty(action))
-        if t == "cancel":
+        if t_lower == "cancel":
             return await bot.cancel_order(action["order_id"])
         raise ValueError(f"Unknown action type: {t!r}")

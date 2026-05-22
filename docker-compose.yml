@@ -89,7 +89,7 @@ services:
       - TIMESCALE_DB=${TIMESCALE_DB:-uora_metrics}
       - BUILDKIT_HOST=tcp://buildkitd:1234
       - REGISTRY_URL=registry:5000
-      - BUILD_TIMEOUT=60
+      - BUILD_TIMEOUT=600
       - MAX_UPLOAD_SIZE=52428800
     volumes:
       - ./uploads:/app/uploads
@@ -146,10 +146,18 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      - TIMESCALE_HOST=timescaledb
+      - TIMESCALE_PORT=5432
+      - TIMESCALE_USER=${TIMESCALE_USER:-uora}
+      - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-${TIMESCALEDB_PASSWORD:?TIMESCALE_PASSWORD or TIMESCALEDB_PASSWORD must be set}}
+      - TIMESCALE_DB=${TIMESCALE_DB:-uora_metrics}
+      - BUILD_TIMEOUT=600
     depends_on:
       buildkitd:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      timescaledb:
         condition: service_healthy
     networks:
       - backend

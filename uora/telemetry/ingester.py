@@ -33,7 +33,7 @@ logger = logging.getLogger("uora.telemetry.ingester")
 # 2024-01-15T10:30:00.000Z POST /api/v1/order 201 45 256 128 abc-123-def
 
 ENVOY_LOG_PATTERN = re.compile(
-    r"^(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)"
+    r"^(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)(?:\s+(\S+))?"
 )
 
 
@@ -114,7 +114,7 @@ class TelemetryIngester:
         if not match:
             return  # Skip malformed lines
 
-        start_time, method, path, status_code, duration_ms, bytes_in, bytes_out, request_id = match.groups()
+        start_time, method, path, status_code, duration_ms, bytes_in, bytes_out, request_id, order_id_field = match.groups()
 
         # Parse timestamp
         try:
@@ -128,11 +128,13 @@ class TelemetryIngester:
         # Convert duration to nanoseconds
         latency_ns = int(float(duration_ms) * 1_000_000)
 
+        order_id = self._extract_order_id(order_id_field, request_id)
+
         record = {
             "time": ts,
             "submission_id": self._extract_submission_id(request_id),
             "bot_id": self._extract_bot_id(request_id),
-            "order_id": request_id,
+            "order_id": order_id,
             "endpoint": f"{method} {endpoint}",
             "latency_ns": latency_ns,
             "status_code": int(status_code),
@@ -216,6 +218,12 @@ class TelemetryIngester:
                 suffix = suffix.split("-req-", 1)[0]
             return suffix.split("-", 1)[0] or None
         return None
+
+    def _extract_order_id(self, order_id_field: Optional[str], request_id: str) -> Optional[str]:
+        """Extract order_id. If missing or "-", falls back to request_id."""
+        if not order_id_field or order_id_field == "-":
+            return request_id
+        return order_id_field
 
     @staticmethod
     def _record_hash(record: dict) -> str:
@@ -335,6 +343,13 @@ def test_extract_submission_id_allows_bot_in_submission_name():
 
     assert ingester._extract_submission_id(request_id) == "bot-test"
     assert ingester._extract_bot_id(request_id) == "01"
+
+
+def test_extract_order_id_falls_back():
+    ingester = TelemetryIngester()
+    assert ingester._extract_order_id(None, "req-1") == "req-1"
+    assert ingester._extract_order_id("-", "req-1") == "req-1"
+    assert ingester._extract_order_id("order-123", "req-1") == "order-123"
 
 
 if __name__ == "__main__":

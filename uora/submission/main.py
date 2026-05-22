@@ -1,4 +1,5 @@
 import json
+import time
 """
 UORA Submission Service -- Production Hardened
 Handles: file upload -> virus scan -> MinIO storage -> build queue
@@ -613,7 +614,7 @@ async def stream_leaderboard(request: Request):
     """SSE endpoint for real-time leaderboard updates from Redis and TimescaleDB."""
     async def fetch_leaderboard_entries() -> list[dict[str, Any]]:
         if not timescale_pool:
-            return []
+            raise RuntimeError("TimescaleDB pool not initialized")
 
         async with timescale_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -680,6 +681,18 @@ async def stream_leaderboard(request: Request):
                 logger.warning("Leaderboard Redis subscription unavailable: %s", exc)
                 pubsub = None
 
+        # Stream complete leaderboard snapshot immediately on connection/reconnect
+        try:
+            entries = await fetch_leaderboard_entries()
+            status = "ok"
+        except Exception as db_exc:
+            logger.error("TimescaleDB connection failed on initial stream connection: %s", db_exc)
+            entries = []
+            status = "degraded"
+
+        event_id = int(time.time() * 1000)
+        yield f"id: {event_id}\ndata: {json.dumps({'type': 'leaderboard', 'entries': entries, 'status': status})}\n\n"
+
         try:
             while True:
                 if await request.is_disconnected():
@@ -692,7 +705,8 @@ async def stream_leaderboard(request: Request):
                             payload = json.loads(message["data"])
                             if isinstance(payload, dict) and "type" in payload:
                                 last_pubsub_event = asyncio.get_running_loop().time()
-                                yield f"data: {json.dumps(payload)}\n\n"
+                                event_id = int(time.time() * 1000)
+                                yield f"id: {event_id}\ndata: {json.dumps(payload)}\n\n"
                                 continue
                     else:
                         await asyncio.sleep(1)
@@ -700,9 +714,16 @@ async def stream_leaderboard(request: Request):
                     now = asyncio.get_running_loop().time()
                     should_poll_db = not pubsub or last_pubsub_event == 0.0 or (now - last_pubsub_event) > 3.0
                     if should_poll_db and now >= next_poll:
-                        entries = await fetch_leaderboard_entries()
-                        if entries or not pubsub:
-                            yield f"data: {json.dumps({'type': 'leaderboard', 'entries': entries})}\n\n"
+                        try:
+                            entries = await fetch_leaderboard_entries()
+                            status = "ok"
+                        except Exception as db_exc:
+                            logger.error("TimescaleDB connection failed during stream update: %s", db_exc)
+                            entries = []
+                            status = "degraded"
+
+                        event_id = int(time.time() * 1000)
+                        yield f"id: {event_id}\ndata: {json.dumps({'type': 'leaderboard', 'entries': entries, 'status': status})}\n\n"
                         next_poll = now + 2.0
                 except Exception as exc:
                     logger.error("Error streaming leaderboard: %s", exc)

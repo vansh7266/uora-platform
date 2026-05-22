@@ -209,8 +209,8 @@ class TradingBot:
             return FIXAdapter.parse_message(response)
             
         if endpoint.startswith("DELETE"):
-            return await self._delete(endpoint.split(" ", 1)[1])
-        return await self._post(endpoint, json=payload)
+            return await self._delete(endpoint.split(" ", 1)[1], order_id=payload.get("order_id"))
+        return await self._post(endpoint, json=payload, order_id=payload.get("id"))
 
     async def _read_fix_message(self) -> str:
         if not self._fix_reader:
@@ -365,19 +365,28 @@ class TradingBot:
     # ── Private HTTP primitives ────────────────────────────────────────────────
 
     async def _post(
-        self, path: str, *, json: dict[str, Any]
+        self, path: str, *, json: dict[str, Any], order_id: str | None = None
     ) -> dict[str, Any]:
-        return await self._request("POST", path, json=json)
+        return await self._request("POST", path, json=json, order_id=order_id)
 
-    async def _delete(self, path: str) -> dict[str, Any]:
-        return await self._request("DELETE", path)
+    async def _delete(self, path: str, order_id: str | None = None) -> dict[str, Any]:
+        return await self._request("DELETE", path, order_id=order_id)
 
     async def _request(
         self,
         method: str,
         path: str,
+        order_id: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        if order_id:
+            headers = kwargs.get("headers", {})
+            if not isinstance(headers, dict):
+                headers = dict(headers)
+            else:
+                headers = headers.copy()
+            headers["x-order-id"] = order_id
+            kwargs["headers"] = headers
         """
         Execute an HTTP request with retry + exponential back-off and circuit
         breaker protection.

@@ -35,6 +35,19 @@ from pathlib import Path
 from typing import Any, Final, Optional
 
 try:
+    import yaml
+except ImportError:
+    yaml = None
+
+try:
+    import kubernetes
+    from kubernetes import client, config
+    from kubernetes.client.rest import ApiException
+except ImportError:
+    kubernetes = None
+
+
+try:
     import redis.asyncio as aioredis
 except ImportError:  # pragma: no cover - minimal local test environments
     class _RedisFallback:
@@ -90,6 +103,9 @@ DB_PASSWORD: Final[str | None] = os.getenv("TIMESCALE_PASSWORD", os.getenv("DB_P
 DB_NAME: Final = os.getenv("TIMESCALE_DB", os.getenv("DB_NAME", "uora_metrics"))
 
 K8S_NAMESPACE: Final = os.getenv("K8S_NAMESPACE", "uora")
+KUBERNETES_ENABLED: Final = os.getenv("KUBERNETES_ENABLED", "false").lower() == "true"
+GKE_SANDBOX_ENABLED: Final = os.getenv("GKE_SANDBOX_ENABLED", "true").lower() == "true"
+K8S_SECCOMP_PROFILE: Final = os.getenv("K8S_SECCOMP_PROFILE", "seccomp-profile.json")
 
 CONSUMER_GROUP: Final = "builders"
 STREAM_NAME: Final = "build_queue"
@@ -168,16 +184,14 @@ metadata:
   annotations:
     sidecar.envoy.uora/inject: "true"
 spec:
-  runtimeClassName: gvisor
+  {runtime_class_spec}
   automountServiceAccountToken: false
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
     runAsGroup: 1000
     fsGroup: 1000
-    seccompProfile:
-      type: Localhost
-      localhostProfile: uora-seccomp.json
+    {seccomp_profile_spec}
   containers:
   - name: engine
     image: {image}
@@ -257,8 +271,8 @@ class SandboxBuilder:
         self._s3_session: Optional[Any] = None
         self._running: bool = False
         self._shutting_down: bool = False
-        # Thread pool for subprocess calls — avoids uvloop child watcher issues on Python 3.11
-        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="uora-cmd")
+        self._executor = None
+        self._k8s_loaded: bool = False
 
     # ── Subprocess helper ────────────────────────────────────────────────
 
@@ -268,26 +282,39 @@ class SandboxBuilder:
         input_bytes: Optional[bytes] = None,
         timeout: float = 120.0,
     ) -> tuple[int, bytes, bytes]:
-        """Run an external command in a thread executor.
+        """Run an external command using asyncio subprocesses.
 
         Returns (returncode, stdout, stderr).
-        Bypasses asyncio child watcher entirely — compatible with uvloop on Python 3.11+.
+        Safely handles timeouts and cancellations by killing the process.
         """
-        loop = asyncio.get_event_loop()
-
-        def _blocking() -> tuple[int, bytes, bytes]:
-            result = subprocess.run(
-                list(cmd),
-                input=input_bytes,
-                capture_output=True,
+        proc = await asyncio.create_subprocess_exec(
+            cmd[0],
+            *cmd[1:],
+            stdin=asyncio.subprocess.PIPE if input_bytes is not None else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=input_bytes),
                 timeout=timeout,
             )
-            return result.returncode, result.stdout, result.stderr
-
-        try:
-            return await loop.run_in_executor(self._executor, _blocking)
-        except subprocess.TimeoutExpired:
+            return proc.returncode or 0, stdout, stderr
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            stdout, stderr = await proc.communicate()
             raise RuntimeError(f"Command timed out after {timeout}s: {' '.join(cmd)}")
+        except asyncio.CancelledError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            await proc.wait()
+            raise
+
 
 
     # ── Lifecycle ───────────────────────────────────────────────────────
@@ -590,6 +617,32 @@ class SandboxBuilder:
 
     # ── Kubernetes deploy ───────────────────────────────────────────────
 
+    def _init_kubernetes(self) -> bool:
+        """Initialize Kubernetes configuration.
+        
+        Attempts in-cluster configuration first, then local kubeconfig.
+        Returns True if successful, False otherwise.
+        """
+        if kubernetes is None or yaml is None:
+            logger.warning("kubernetes or yaml Python library is not installed/available")
+            return False
+        if self._k8s_loaded:
+            return True
+        try:
+            config.load_in_cluster_config()
+            self._k8s_loaded = True
+            logger.info("Loaded in-cluster Kubernetes configuration")
+            return True
+        except config.ConfigException:
+            try:
+                config.load_kube_config()
+                self._k8s_loaded = True
+                logger.info("Loaded local kubeconfig configuration")
+                return True
+            except Exception as exc:
+                logger.warning("Could not load any Kubernetes configuration: %s", exc)
+                return False
+
     async def _deploy_pod(
         self,
         submission_id: str,
@@ -597,19 +650,135 @@ class SandboxBuilder:
     ) -> str:
         """Deploy a Pod and stable Service for the contestant's submission.
 
-        Returns the Pod name.
+        If KUBERNETES_ENABLED is False, spins up a local Docker container instead.
+        Returns the Pod name or local container target hostname.
         """
         pod_name = _sanitize_pod_name(submission_id)
+
+        if not KUBERNETES_ENABLED:
+            logger.info("Kubernetes is disabled. Deploying submission %s locally using Docker...", submission_id)
+            # Remove any existing container with the same name
+            await self._run_cmd("docker", "rm", "-f", pod_name)
+            
+            # Run the compiled matching engine container locally
+            # In local Docker, compose creates network named backend or uora_backend.
+            # We first try 'uora_backend', then fallback to 'backend' or let it auto-select.
+            rc, stdout, stderr = await self._run_cmd(
+                "docker", "run", "-d",
+                "--name", pod_name,
+                "--network", "uora_backend",
+                image_tag
+            )
+            
+            if rc != 0:
+                logger.warning("Failed to start Docker container on 'uora_backend' network: %s. Retrying with 'backend'...", stderr.decode(errors="replace"))
+                rc, stdout, stderr = await self._run_cmd(
+                    "docker", "run", "-d",
+                    "--name", pod_name,
+                    "--network", "backend",
+                    image_tag
+                )
+            
+            if rc != 0:
+                logger.warning("Failed to start Docker container on 'backend' network: %s. Retrying on default bridge...", stderr.decode(errors="replace"))
+                rc, stdout, stderr = await self._run_cmd(
+                    "docker", "run", "-d",
+                    "--name", pod_name,
+                    image_tag
+                )
+                
+            if rc != 0:
+                raise RuntimeError(f"Local docker container deployment failed (rc={rc}): {stderr.decode(errors='replace')}")
+                
+            logger.info("Deployed contestant engine locally as Docker container: %s", pod_name)
+            return pod_name
+
+        # Standard Kubernetes deployment path
+        if GKE_SANDBOX_ENABLED:
+            runtime_class_spec = "runtimeClassName: gvisor"
+            seccomp_profile_spec = "seccompProfile:\n      type: RuntimeDefault"
+        else:
+            runtime_class_spec = ""
+            if K8S_SECCOMP_PROFILE:
+                seccomp_profile_spec = f"seccompProfile:\n      type: Localhost\n      localhostProfile: {K8S_SECCOMP_PROFILE}"
+            else:
+                seccomp_profile_spec = "seccompProfile:\n      type: RuntimeDefault"
 
         manifest = K8S_POD_TEMPLATE.format(
             pod_name=pod_name,
             namespace=K8S_NAMESPACE,
             image=image_tag,
             submission_id=submission_id,
+            runtime_class_spec=runtime_class_spec,
+            seccomp_profile_spec=seccomp_profile_spec,
         )
 
         logger.info("Deploying Pod %s (image=%s)", pod_name, image_tag)
 
+        # Try to use the native Python K8s API if available
+        if self._init_kubernetes():
+            try:
+                documents = list(yaml.safe_load_all(manifest))
+                v1 = client.CoreV1Api()
+
+                for doc in documents:
+                    if not doc:
+                        continue
+                    kind = doc.get("kind")
+                    name = doc["metadata"]["name"]
+                    namespace = doc["metadata"].get("namespace", K8S_NAMESPACE)
+
+                    if kind == "Pod":
+                        try:
+                            logger.info("Deleting existing Pod %s/%s if it exists", namespace, name)
+                            v1.delete_namespaced_pod(
+                                name=name,
+                                namespace=namespace,
+                                body=client.V1DeleteOptions(propagation_policy="Background")
+                            )
+                            # Wait up to 5 seconds for deletion to complete/initiate
+                            for _ in range(10):
+                                try:
+                                    v1.read_namespaced_pod(name=name, namespace=namespace)
+                                    await asyncio.sleep(0.5)
+                                except ApiException as e:
+                                    if e.status == 404:
+                                        break
+                                    raise
+                        except ApiException as e:
+                            if e.status != 404:
+                                logger.warning("Error deleting existing Pod %s: %s", name, e)
+
+                        logger.info("Creating Pod %s/%s", namespace, name)
+                        v1.create_namespaced_pod(namespace=namespace, body=doc)
+
+                    elif kind == "Service":
+                        try:
+                            logger.info("Deleting existing Service %s/%s if it exists", namespace, name)
+                            v1.delete_namespaced_service(name=name, namespace=namespace)
+                            for _ in range(10):
+                                try:
+                                    v1.read_namespaced_service(name=name, namespace=namespace)
+                                    await asyncio.sleep(0.5)
+                                except ApiException as e:
+                                    if e.status == 404:
+                                        break
+                                    raise
+                        except ApiException as e:
+                            if e.status != 404:
+                                logger.warning("Error deleting existing Service %s: %s", name, e)
+
+                        logger.info("Creating Service %s/%s", namespace, name)
+                        v1.create_namespaced_service(namespace=namespace, body=doc)
+
+                logger.info("Deployed Pod and Service %s via Kubernetes API", pod_name)
+                return pod_name
+
+            except Exception as api_exc:
+                logger.error("Kubernetes API deployment failed: %s. Falling back to kubectl CLI...", api_exc)
+
+        # Fallback to kubectl command line if Kubernetes API is unavailable or failed
+        logger.info("Deploying Pod %s using kubectl fallback...", pod_name)
         rc, _, stderr = await self._run_cmd(
             "kubectl", "apply", "-f", "-",
             input_bytes=manifest.encode(),
@@ -622,8 +791,9 @@ class SandboxBuilder:
                 f"kubectl apply failed (rc={rc}):\n{apply_log}"
             )
 
-        logger.info("Deployed Pod and Service %s", pod_name)
+        logger.info("Deployed Pod and Service %s via kubectl fallback", pod_name)
         return pod_name
+
 
     # ── Single-job pipeline ─────────────────────────────────────────────
 
@@ -669,7 +839,10 @@ class SandboxBuilder:
 
             # Deploy
             pod_name = await self._deploy_pod(submission_id, image_tag)
-            target_url = f"http://{pod_name}.{K8S_NAMESPACE}.svc.cluster.local:8080"
+            if KUBERNETES_ENABLED:
+                target_url = f"http://{pod_name}.{K8S_NAMESPACE}.svc.cluster.local:8080"
+            else:
+                target_url = f"http://{pod_name}:8080"
             await self._update_status(
                 submission_id,
                 "deployed",
