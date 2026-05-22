@@ -212,6 +212,7 @@ export const DEMO_SUBMISSIONS: Submission[] = [
     status: "failed",
     submittedAt: Date.now() - 65 * 60_000,
     error: "Build timeout: compilation exceeded 120s limit",
+    failedStage: "building",
   },
   {
     id: "demo-prev-0001",

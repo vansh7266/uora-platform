@@ -115,7 +115,17 @@ export function SubmissionPanel({ isDemo = false }: SubmissionPanelProps) {
         if (res.ok) {
           const data = await res.json();
           const status = data.status as SubmissionStatus;
-          updateSubmissionStatus(id, status, data.error);
+          
+          let failedStage: string | undefined = undefined;
+          if (status === "failed") {
+            if (!data.built_at) failedStage = "building";
+            else if (!data.deployed_at) failedStage = "deployed";
+            else if (!data.benchmarking_at) failedStage = "benchmarking";
+            else if (!data.validating_at) failedStage = "validating";
+            else failedStage = "scored";
+          }
+
+          updateSubmissionStatus(id, status, data.error, failedStage);
           if (status === "scored" || status === "failed") {
             clearInterval(poll);
           }

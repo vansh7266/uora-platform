@@ -29,7 +29,12 @@ export function RunTimeline() {
   const { submissions, entries } = useLeaderboardStore();
 
   // Helper to map current status + store entries to the 8 timeline stages
-  const getStageStatus = (subStatus: string, subId: string, stageId: string) => {
+  const getStageStatus = (
+    subStatus: string,
+    subId: string,
+    stageId: string,
+    failedStage?: string
+  ) => {
     const isFailed = subStatus === "failed";
     const order = ["queued", "building", "built", "deployed", "benchmarking", "validating", "scored"];
     
@@ -39,6 +44,8 @@ export function RunTimeline() {
     let currentStageIndex = order.indexOf(subStatus);
     if (isScored) {
       currentStageIndex = order.indexOf("scored");
+    } else if (isFailed) {
+      currentStageIndex = order.indexOf(failedStage || "building");
     }
 
     const stageIndex = order.indexOf(stageId);
@@ -130,7 +137,7 @@ export function RunTimeline() {
             {/* Horizontal Timeline Track */}
             <div className="grid grid-cols-1 md:grid-cols-7 gap-6 relative">
               {STAGES.map((stage, idx) => {
-                const status = getStageStatus(sub.status, sub.id, stage.id);
+                const status = getStageStatus(sub.status, sub.id, stage.id, sub.failedStage);
                 const Icon = stage.icon;
 
                 return (

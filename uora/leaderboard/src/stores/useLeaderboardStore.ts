@@ -52,6 +52,7 @@ export interface Submission {
   submittedAt: number;
   buildLog?: string;
   error?: string;
+  failedStage?: string;
 }
 
 interface LeaderboardState {
@@ -68,7 +69,7 @@ interface LeaderboardState {
   addMetrics: (metric: MetricUpdate) => void;
   addAnomaly: (anomaly: AnomalyEvent) => void;
   addSubmission: (submission: Submission) => void;
-  updateSubmissionStatus: (id: string, status: Submission["status"], error?: string) => void;
+  updateSubmissionStatus: (id: string, status: Submission["status"], error?: string, failedStage?: string) => void;
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedEntry: (entry: LeaderboardEntry | null) => void;
@@ -123,11 +124,23 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
       return { submissions: [submission, ...state.submissions] };
     }),
 
-  updateSubmissionStatus: (id, status, error) =>
+  updateSubmissionStatus: (id, status, error, failedStage) =>
     set((state) => ({
-      submissions: state.submissions.map((s) =>
-        s.id === id ? { ...s, status, error: error ?? s.error } : s
-      ),
+      submissions: state.submissions.map((s) => {
+        if (s.id === id) {
+          const calculatedFailedStage =
+            status === "failed"
+              ? failedStage ?? (s.status !== "failed" ? s.status : s.failedStage)
+              : undefined;
+          return {
+            ...s,
+            status,
+            error: error ?? s.error,
+            failedStage: calculatedFailedStage,
+          };
+        }
+        return s;
+      }),
     })),
 
   setConnected: (connected) => set({ connected }),
