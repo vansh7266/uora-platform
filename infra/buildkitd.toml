@@ -1,0 +1,12 @@
+# BuildKit daemon configuration
+# Allows pushing to the local HTTP-only Docker registry.
+# Without this, buildctl defaults to HTTPS and every build-push fails
+# with a TLS handshake error against the plain-HTTP registry:5000.
+
+[registry."registry:5000"]
+  http = true
+  insecure = true
+
+[registry."localhost:5000"]
+  http = true
+  insecure = true

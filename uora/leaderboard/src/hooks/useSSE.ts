@@ -67,7 +67,12 @@ export function useSSE(url: string = "/api/leaderboard") {
             }))
           );
         } else if (data.type === "submission_status") {
-          updateSubmissionStatus(data.submission_id, data.status, data.error);
+          updateSubmissionStatus(
+            data.submission_id,
+            data.status,
+            data.error ?? undefined,
+            data.status === "failed" ? (data.failed_stage || "building") : undefined
+          );
         } else if (data.type === "benchmark_complete") {
           updateSubmissionStatus(data.submission_id, "scored");
         } else if (data.type === "metrics") {
