@@ -660,6 +660,9 @@ class SandboxBuilder:
             # Remove any existing container with the same name
             await self._run_cmd("docker", "rm", "-f", pod_name)
             
+            # Rewrite image tag for the host docker daemon
+            host_image_tag = image_tag.replace("registry:5000", "localhost:5000")
+            
             # Run the compiled matching engine container locally
             # In local Docker, compose creates network named backend or uora_backend.
             # We first try 'uora_backend', then fallback to 'backend' or let it auto-select.
@@ -667,7 +670,7 @@ class SandboxBuilder:
                 "docker", "run", "-d",
                 "--name", pod_name,
                 "--network", "uora_backend",
-                image_tag
+                host_image_tag
             )
             
             if rc != 0:
@@ -676,7 +679,7 @@ class SandboxBuilder:
                     "docker", "run", "-d",
                     "--name", pod_name,
                     "--network", "backend",
-                    image_tag
+                    host_image_tag
                 )
             
             if rc != 0:
@@ -684,7 +687,7 @@ class SandboxBuilder:
                 rc, stdout, stderr = await self._run_cmd(
                     "docker", "run", "-d",
                     "--name", pod_name,
-                    image_tag
+                    host_image_tag
                 )
                 
             if rc != 0:
@@ -946,12 +949,9 @@ class SandboxBuilder:
 
 async def main() -> None:
     """Entry point when invoked as ``python -m uora.sandbox.builder``."""
-    try:
-        import uvloop
-        uvloop.install()
-        logger.info("uvloop event loop installed")
-    except ImportError:
-        logger.info("uvloop not available — using default asyncio loop")
+    # uvloop is disabled because get_child_watcher() raises NotImplementedError
+    # when executing docker subprocesses. Default asyncio loop works perfectly.
+    logger.info("Using default asyncio loop for subprocess compatibility")
 
     builder = SandboxBuilder()
     await builder.run()

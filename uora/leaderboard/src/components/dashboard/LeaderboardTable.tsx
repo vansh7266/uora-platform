@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronDown,
@@ -125,9 +125,8 @@ export function LeaderboardTable() {
           </thead>
           <tbody>
             {entries.map((entry, index) => (
-              <>
+              <React.Fragment key={entry.submission_id}>
                 <motion.tr
-                  key={`row-${entry.submission_id}`}
                   layout
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -307,7 +306,7 @@ export function LeaderboardTable() {
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             ))}
 
             {entries.length === 0 && (

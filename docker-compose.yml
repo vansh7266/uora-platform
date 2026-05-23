@@ -139,6 +139,7 @@ services:
       context: .
       dockerfile: uora/sandbox/Dockerfile.builder
     container_name: uora-builder
+    user: "root"
     env_file:
       - .env
     environment:
@@ -156,6 +157,8 @@ services:
       - TIMESCALE_PASSWORD=${TIMESCALE_PASSWORD:-${TIMESCALEDB_PASSWORD:?TIMESCALE_PASSWORD or TIMESCALEDB_PASSWORD must be set}}
       - TIMESCALE_DB=${TIMESCALE_DB:-uora_metrics}
       - BUILD_TIMEOUT=600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       buildkitd:
         condition: service_healthy

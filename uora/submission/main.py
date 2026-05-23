@@ -316,13 +316,7 @@ async def auth_google_callback(code: str):
         session_key = f"session:{userinfo.get('email', uuid.uuid4().hex)}"
         await redis_pool.setex(session_key, 86400, session_token)  # 24h TTL
 
-    response = JSONResponse(content={
-        "message": "Authentication successful",
-        "user": {
-            "email": userinfo.get("email", ""),
-            "name": userinfo.get("name", ""),
-        },
-    })
+    response = RedirectResponse(url="http://localhost:3000/dashboard", status_code=303)
     set_session_cookie(response, session_token)
     return response
 

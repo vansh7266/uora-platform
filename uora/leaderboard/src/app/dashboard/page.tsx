@@ -56,7 +56,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState("submit");
   const { connected, entries, lastUpdated, submissions } = useLeaderboardStore();
-  const { isAuthenticated, isLoading, isDemo } = useAuthStore();
+  const { isAuthenticated, isLoading, isDemo, login } = useAuthStore();
   const { setEntries, addMetrics, addAnomaly, addSubmission } = useLeaderboardStore();
   const [selectedAuditEngine, setSelectedAuditEngine] = useState<string>("");
   const [authChecked, setAuthChecked] = useState(false);
@@ -75,17 +75,39 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo]);
 
-  // Auth guard — redirect to /auth if not logged in
+  // Auth guard — check backend for session cookie, then redirect to /auth if not logged in
   useEffect(() => {
     // Wait one tick for Zustand persist to hydrate from localStorage
-    const timer = setTimeout(() => {
-      setAuthChecked(true);
-      if (!isAuthenticated) {
-        router.replace("/auth");
+    const timer = setTimeout(async () => {
+      if (isAuthenticated) {
+        setAuthChecked(true);
+        return;
       }
+      
+      try {
+        const res = await fetch("http://localhost:8000/auth/me", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            login({
+              id: data.payload?.sub || "user",
+              name: data.payload?.name || data.user,
+              email: data.user,
+              avatar: data.payload?.picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.user}`
+            });
+            setAuthChecked(true);
+            return;
+          }
+        }
+      } catch (e) {
+        // network or CORS error
+      }
+      
+      setAuthChecked(true);
+      router.replace("/auth");
     }, 50);
     return () => clearTimeout(timer);
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, login]);
 
   // Show a minimal loading screen while we check auth
   if (!authChecked || isLoading) {

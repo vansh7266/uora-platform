@@ -44,7 +44,9 @@ const LANGUAGE_LABEL: Record<string, string> = {
 };
 
 function detectLanguage(filename: string): string | null {
-  const ext = filename.substring(filename.lastIndexOf("."));
+  const name = filename.toLowerCase();
+  if (name.endsWith(".tar.gz") || name.endsWith(".tgz") || name.endsWith(".zip")) return "cpp";
+  const ext = name.substring(name.lastIndexOf("."));
   return LANGUAGE_MAP[ext] || null;
 }
 
@@ -308,7 +310,7 @@ export function SubmissionPanel({ isDemo = false }: SubmissionPanelProps) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".cpp,.cc,.cxx,.rs,.go"
+            accept=".cpp,.cc,.cxx,.rs,.go,.zip,.tar.gz,.tgz"
             onChange={(e) => {
               if (e.target.files?.[0]) handleFileSelect(e.target.files[0]);
             }}
@@ -346,7 +348,7 @@ export function SubmissionPanel({ isDemo = false }: SubmissionPanelProps) {
                 Drag &amp; drop your matching engine source file here
               </p>
               <p className="text-[9px] font-mono text-slate-600">
-                Supported: C++17/20 (.cpp, .cc, .cxx) · Rust (.rs) · Go (.go)
+                Supported: C++17/20 (.cpp) · Rust (.rs) · Go (.go) · Archives (.tar.gz, .zip)
               </p>
             </div>
           )}
@@ -373,7 +375,7 @@ export function SubmissionPanel({ isDemo = false }: SubmissionPanelProps) {
             >
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
               <span>
-                Unsupported file type: <span className="font-bold">{file?.name}</span>. Please upload a <span className="font-bold">.cpp</span>, <span className="font-bold">.cc</span>, <span className="font-bold">.rs</span>, or <span className="font-bold">.go</span> source file.
+                Unsupported file type: <span className="font-bold">{file?.name}</span>. Please upload a <span className="font-bold">.cpp</span>, <span className="font-bold">.rs</span>, <span className="font-bold">.go</span>, or an archive (<span className="font-bold">.tar.gz</span>, <span className="font-bold">.zip</span>).
               </span>
             </motion.div>
           )}
