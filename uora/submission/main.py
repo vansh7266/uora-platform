@@ -185,20 +185,48 @@ def generate_submission_id() -> str:
 
 
 async def validate_file_size(file: UploadFile) -> None:
-    """Async file size validation — reads content instead of blocking seek/tell."""
-    content = await file.read()
-    size = len(content)
+    """Async file size validation — uses chunked streaming to avoid loading entire file into memory."""
+    chunk_size = 8192  # 8KB chunks
+    total_size = 0
+    
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_UPLOAD_SIZE:
+            raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE} bytes")
+    
     # Rewind so downstream can read again
     await file.seek(0)
-    if size > MAX_UPLOAD_SIZE:
-        raise HTTPException(413, f"File too large. Max: {MAX_UPLOAD_SIZE} bytes")
 
 
 def scan_filename(filename: str) -> None:
-    forbidden = {"..", "/", "\\", ";", "|", "&", "$"}
+    """Comprehensive filename validation to prevent path traversal and injection attacks."""
+    if not filename:
+        raise HTTPException(400, "Filename cannot be empty")
+    
+    # Length validation
+    if len(filename) > 255:
+        raise HTTPException(400, "Filename too long (max 255 characters)")
+    
+    # Check for null bytes and control characters
+    if any(ord(c) < 32 for c in filename):
+        raise HTTPException(400, "Filename contains invalid control characters")
+    
+    # Check for path traversal sequences and shell metacharacters
+    forbidden = {"..", "/", "\\", ";", "|", "&", "$", "`", "(", ")", "{", "}", "[", "]", "<", ">", "\n", "\r", "\t"}
     for char in forbidden:
         if char in filename:
-            raise HTTPException(400, "Invalid filename")
+            raise HTTPException(400, f"Invalid filename: contains forbidden character '{char}'")
+    
+    # Check for reserved Windows filenames
+    reserved_names = {"CON", "PRN", "AUX", "NUL", 
+                     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+                     "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"}
+    base_name = filename.split(".")[0].upper()
+    if base_name in reserved_names:
+        raise HTTPException(400, "Filename contains reserved system name")
 
 
 # --- Auth Dependencies ---

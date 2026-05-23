@@ -276,6 +276,26 @@ class SandboxBuilder:
 
     # ── Subprocess helper ────────────────────────────────────────────────
 
+    async def _wait_for_container_health(self, container_name: str, timeout: float = 30.0) -> None:
+        """Wait for a Docker container to be running and healthy."""
+        start_time = asyncio.get_event_loop().time()
+        
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            rc, stdout, _ = await self._run_cmd("docker", "inspect", "--format", "{{.State.Status}}", container_name, timeout=5.0)
+            if rc == 0:
+                status = stdout.decode().strip()
+                if status == "running":
+                    logger.info("Container %s is running", container_name)
+                    return
+                elif status in ("exited", "dead"):
+                    # Get container logs for debugging
+                    rc, logs, _ = await self._run_cmd("docker", "logs", "--tail", "50", container_name, timeout=5.0)
+                    raise RuntimeError(f"Container {container_name} exited. Logs:\n{logs.decode(errors='replace')}")
+            
+            await asyncio.sleep(1.0)
+        
+        raise RuntimeError(f"Container {container_name} did not become healthy within {timeout}s")
+
     async def _run_cmd(
         self,
         *cmd: str,
@@ -323,19 +343,33 @@ class SandboxBuilder:
         """Initialize all connections and register the consumer group."""
         logger.info("Starting SandboxBuilder (consumer=%s)", CONSUMER_ID)
 
-        # Redis connection pool
+        # Redis connection pool with retry logic
         if aioredis.Redis is None:
             raise RuntimeError("redis is required for sandbox build queue access")
-        self._redis = aioredis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            password=require_setting("REDIS_PASSWORD", REDIS_PASSWORD),
-            decode_responses=True,
-            max_connections=10,
-        )
-        # Verify connectivity
-        await self._redis.ping()
-        logger.info("Connected to Redis at %s:%d", REDIS_HOST, REDIS_PORT)
+        
+        max_retries = 5
+        base_delay = 1.0
+        for attempt in range(max_retries):
+            try:
+                self._redis = aioredis.Redis(
+                    host=REDIS_HOST,
+                    port=REDIS_PORT,
+                    password=require_setting("REDIS_PASSWORD", REDIS_PASSWORD),
+                    decode_responses=True,
+                    max_connections=10,
+                    socket_connect_timeout=5.0,
+                    socket_timeout=5.0,
+                )
+                # Verify connectivity
+                await self._redis.ping()
+                logger.info("Connected to Redis at %s:%d", REDIS_HOST, REDIS_PORT)
+                break
+            except (aioredis.ConnectionError, aioredis.TimeoutError) as exc:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"Failed to connect to Redis after {max_retries} attempts: {exc}")
+                delay = base_delay * (2 ** attempt)
+                logger.warning("Redis connection attempt %d failed, retrying in %.1fs: %s", attempt + 1, delay, exc)
+                await asyncio.sleep(delay)
 
         # Ensure the consumer group exists (MKSTREAM creates the stream if needed)
         try:
@@ -441,7 +475,7 @@ class SandboxBuilder:
                 }),
             )
         except Exception as exc:
-            logger.debug("Status publish skipped for %s: %s", submission_id, exc)
+            logger.warning("Status publish failed for %s: %s", submission_id, exc)
         logger.info("Submission %s → %s", submission_id, status)
 
     async def _enqueue_benchmark(
@@ -517,12 +551,17 @@ class SandboxBuilder:
             region_name="us-east-1",
         ) as s3:
             try:
-                resp = await s3.get_object(Bucket=MINIO_BUCKET, Key=s3_key)
+                resp = await asyncio.wait_for(
+                    s3.get_object(Bucket=MINIO_BUCKET, Key=s3_key),
+                    timeout=60.0
+                )
                 # aioboto3 StreamingBody: read entire body (files are ≤50 MB)
                 body = resp["Body"]
-                data = await body.read()
+                data = await asyncio.wait_for(body.read(), timeout=120.0)
                 with open(download_path, "wb") as fh:
                     fh.write(data)
+            except asyncio.TimeoutError:
+                raise RuntimeError(f"MinIO download timeout for {s3_key}")
             except s3.exceptions.NoSuchKey:
                 raise FileNotFoundError(f"S3 key not found: {MINIO_BUCKET}/{s3_key}")
 
@@ -535,17 +574,29 @@ class SandboxBuilder:
             logger.info("Prepared single-file source at %s", target_path)
             return source_dir
 
-        # Validate archive members to prevent path traversal
+        # Validate archive members to prevent path traversal and symlink attacks
         rc, stdout, _ = await self._run_cmd("tar", "-tzf", str(download_path), timeout=30.0)
         if rc == 0:
+            source_dir_resolved = source_dir.resolve()
             for member in stdout.decode().splitlines():
-                if member.startswith("/") or ".." in member:
-                    raise RuntimeError("Path traversal attempt detected in archive")
+                # Check for absolute paths and path traversal sequences
+                if member.startswith("/") or ".." in member or member.startswith("\\"):
+                    raise RuntimeError(f"Path traversal attempt detected in archive: {member}")
+                
+                # Resolve the member path relative to extraction directory
+                member_path = (source_dir / member).resolve()
+                
+                # Ensure the resolved path is within the extraction directory
+                try:
+                    member_path.relative_to(source_dir_resolved)
+                except ValueError:
+                    raise RuntimeError(f"Path traversal attempt detected (resolved outside extraction dir): {member}")
 
-        # Extract archive uploads securely
+        # Extract archive uploads securely with additional hardening
         rc, _, stderr = await self._run_cmd(
             "tar", "-xzf", str(download_path), "-C", str(source_dir),
             "--no-same-owner", "--no-same-permissions",
+            "--strip-components=0",  # Don't strip any path components
             timeout=60.0,
         )
         if rc != 0:
@@ -600,9 +651,12 @@ class SandboxBuilder:
         rc, _, stderr = await self._run_cmd(*cmd, timeout=float(BUILD_TIMEOUT))
 
         if rc != 0:
-            build_log = stderr.decode(errors="replace")[-4096:]  # last 4 KB
+            build_log = stderr.decode(errors="replace")
+            # Log full error for debugging, but show truncated in exception
+            logger.error("BuildKit build failed (rc=%d). Full stderr:\n%s", rc, build_log)
+            truncated_log = build_log[-4096:] if len(build_log) > 4096 else build_log
             raise RuntimeError(
-                f"BuildKit build failed (rc={rc}):\n{build_log}"
+                f"BuildKit build failed (rc={rc}):\n{truncated_log}"
             )
 
         logger.info("Built and pushed image %s successfully", image_tag)
@@ -694,6 +748,10 @@ class SandboxBuilder:
                 raise RuntimeError(f"Local docker container deployment failed (rc={rc}): {stderr.decode(errors='replace')}")
                 
             logger.info("Deployed contestant engine locally as Docker container: %s", pod_name)
+            
+            # Wait for container to be healthy before proceeding
+            await self._wait_for_container_health(pod_name, timeout=30.0)
+            
             return pod_name
 
         # Standard Kubernetes deployment path
@@ -789,9 +847,12 @@ class SandboxBuilder:
         )
 
         if rc != 0:
-            apply_log = stderr.decode(errors="replace")[-4096:]
+            apply_log = stderr.decode(errors="replace")
+            # Log full error for debugging, but show truncated in exception
+            logger.error("kubectl apply failed (rc=%d). Full stderr:\n%s", rc, apply_log)
+            truncated_log = apply_log[-4096:] if len(apply_log) > 4096 else apply_log
             raise RuntimeError(
-                f"kubectl apply failed (rc={rc}):\n{apply_log}"
+                f"kubectl apply failed (rc={rc}):\n{truncated_log}"
             )
 
         logger.info("Deployed Pod and Service %s via kubectl fallback", pod_name)
@@ -867,8 +928,9 @@ class SandboxBuilder:
             if tmpdir is not None:
                 try:
                     tmpdir.cleanup()
-                except Exception:
-                    pass
+                    logger.debug("Cleaned up temporary directory for submission %s", submission_id)
+                except Exception as exc:
+                    logger.error("Failed to clean up temporary directory for submission %s: %s", submission_id, exc)
 
     # ── Consumer loop ───────────────────────────────────────────────────
 

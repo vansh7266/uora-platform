@@ -117,14 +117,20 @@ export function useSSE(url: string = "/api/leaderboard") {
     connect();
 
     return () => {
+      // Close EventSource if it exists
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
+      // Clear any pending reconnect timeout
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
+      // Reset connection state
+      setConnected(false);
     };
-  }, [connect, url]);
+  }, [connect, url, setConnected]);
 
   return {
     reconnect: connect,

@@ -72,8 +72,7 @@ export default function DashboardPage() {
     DEMO_METRICS.forEach((m) => addMetrics(m));
     DEMO_ANOMALIES.forEach((a) => addAnomaly(a));
     DEMO_SUBMISSIONS.forEach((s) => addSubmission(s));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo]);
+  }, [isDemo, setEntries, addMetrics, addAnomaly, addSubmission]);
 
   // Auth guard — check backend for session cookie, then redirect to /auth if not logged in
   useEffect(() => {
@@ -85,7 +84,8 @@ export default function DashboardPage() {
       }
       
       try {
-        const res = await fetch("http://localhost:8000/auth/me", { credentials: "include" });
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const res = await fetch(`${apiUrl}/auth/me`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json();
           if (data.user) {

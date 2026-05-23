@@ -107,7 +107,12 @@ class BotCoordinator:
                     result, latency_ns = await bot.measure_latency(
                         self._dispatch(bot, action)
                     )
-                    async with lock:
+                    try:
+                        acquired = await asyncio.wait_for(lock.acquire(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.error("Worker %d failed to acquire lock for result recording", worker_id)
+                        raise
+                    try:
                         self._records.append({
                             "worker_id":  worker_id,
                             "action":     action,
@@ -118,8 +123,15 @@ class BotCoordinator:
                         completed += 1
                         if completed % _LOG_EVERY == 0:
                             print(f"Progress: {completed} orders")
+                    finally:
+                        lock.release()
                 except Exception as exc:
-                    async with lock:
+                    try:
+                        acquired = await asyncio.wait_for(lock.acquire(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.error("Worker %d failed to acquire lock for failure recording", worker_id)
+                        raise
+                    try:
                         self._failures.append({
                             "worker_id": worker_id,
                             "action": action,
@@ -129,6 +141,8 @@ class BotCoordinator:
                         self._errors += 1
                         completed += 1
                         logger.error("Worker %d action dispatch failed: %s. Action: %s", worker_id, exc, action)
+                    finally:
+                        lock.release()
 
                 await asyncio.sleep(rng.uniform(_MIN_DELAY, _MAX_DELAY))
 
