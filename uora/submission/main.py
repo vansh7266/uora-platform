@@ -48,7 +48,8 @@ MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 50 * 1024 * 1024))  # 50MB
 # --- Google OAuth2 Config ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/auth/google/callback")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # --- API Token Auth ---
 UORA_API_TOKEN = os.getenv("UORA_API_TOKEN", "")
@@ -344,19 +345,18 @@ async def auth_google_callback(code: str):
         session_key = f"session:{userinfo.get('email', uuid.uuid4().hex)}"
         await redis_pool.setex(session_key, 86400, session_token)  # 24h TTL
 
-    response = RedirectResponse(url="http://localhost:3000/dashboard", status_code=303)
+    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard", status_code=303)
     set_session_cookie(response, session_token)
     return response
 
 
 @app.get("/auth/me")
 async def auth_me(auth_data: dict = Depends(require_auth)):
-    """Return current authenticated user info."""
+    """Return current authenticated user info including full session payload."""
     return {
         "user": auth_data.get("user"),
         "source": auth_data.get("source"),
-        "email": auth_data.get("payload", {}).get("email"),
-        "name": auth_data.get("payload", {}).get("name"),
+        "payload": auth_data.get("payload", {}),
     }
 
 
