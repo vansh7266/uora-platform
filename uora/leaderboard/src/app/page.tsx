@@ -1,700 +1,695 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, useInView } from "framer-motion";
 import {
-  Activity,
   ArrowRight,
   Bot,
-  Boxes,
-  Gauge,
-  LineChart,
-  LockKeyhole,
+  CheckCircle,
+  ChevronRight,
+  Code2,
+  Cpu,
+  GitBranch,
+  Globe,
+  LayoutDashboard,
+  Lock,
   Radio,
   ShieldCheck,
-  UploadCloud,
-  Cpu,
-  Binary,
-  FileCode,
   Zap,
 } from "lucide-react";
-import { UoraLogo } from "@/components/ui/UoraLogo";
+import { Logo } from "@/components/ui/Logo";
+import { StatusDot } from "@/components/ui/StatusDot";
 
-// Native Stateful HFT Telemetry Dashboard Widget
-function TelemetryConsoleWidget() {
-  const logs = [
-    "UPLOAD_ACCEPTED // source archived and queued",
-    "BUILD_WORKER // isolated compile stage pending",
-    "SANDBOX_DEPLOY // gVisor runtime enforced",
-    "BENCHMARK_QUEUE // REST order-flow replay scheduled",
-    "VALIDATOR // price-time priority checks ready",
-    "SCORING // waiting for real telemetry rows",
-  ];
-  const bids = [78, 62, 45, 91, 55];
-  const asks = [82, 48, 69, 58, 73];
+// ── Animated orderbook (left side of hero) ────────────────────────────────────
+
+type Level = { price: number; size: number; total: number };
+
+function generateBook(side: "bid" | "ask", midprice: number): Level[] {
+  const levels: Level[] = [];
+  let total = 0;
+  const sign = side === "bid" ? -1 : 1;
+  for (let i = 0; i < 8; i++) {
+    const tick = (i + 1) * 0.25;
+    const price = midprice + sign * tick;
+    const size = Math.floor(Math.random() * 600 + 100);
+    total += size;
+    levels.push({ price: parseFloat(price.toFixed(2)), size, total });
+  }
+  return side === "bid" ? levels : levels.reverse();
+}
+
+function LiveOrderbook() {
+  const [midprice] = useState(18_432.5);
+  const [bids, setBids] = useState<Level[]>(() => generateBook("bid", 18_432.5));
+  const [asks, setAsks] = useState<Level[]>(() => generateBook("ask", 18_432.5));
+  const [lastTrade, setLastTrade] = useState<{ price: number; side: "bid" | "ask" }>({
+    price: 18_432.5,
+    side: "bid",
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBids(generateBook("bid", midprice));
+      setAsks(generateBook("ask", midprice));
+      const newPrice = midprice + (Math.random() - 0.5) * 2;
+      setLastTrade({
+        price: parseFloat(newPrice.toFixed(2)),
+        side: Math.random() > 0.5 ? "bid" : "ask",
+      });
+    }, 800);
+    return () => clearInterval(interval);
+  }, [midprice]);
+
+  const maxTotal = Math.max(
+    ...[...bids, ...asks].map((l) => l.total),
+    1
+  );
+
+  const Row = ({
+    level,
+    side,
+    maxT,
+  }: {
+    level: Level;
+    side: "bid" | "ask";
+    maxT: number;
+  }) => {
+    const pct = (level.total / maxT) * 100;
+    const isBid = side === "bid";
+    return (
+      <motion.div
+        key={`${level.price}`}
+        layout
+        className="relative flex items-center gap-2 px-3 py-[3px] font-mono text-[11px] hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+      >
+        {/* Depth bar */}
+        <div
+          className={`absolute inset-y-0 ${isBid ? "right-0" : "left-0"} transition-all duration-500`}
+          style={{
+            width: `${pct}%`,
+            background: isBid
+              ? "rgba(22,199,132,0.08)"
+              : "rgba(234,57,67,0.08)",
+          }}
+        />
+        <span className="relative flex-1 tabnum text-right text-[var(--ink-400)] text-[10px]">
+          {level.size.toLocaleString()}
+        </span>
+        <span
+          className={`relative w-20 text-center font-semibold tabnum ${
+            isBid ? "text-[var(--bid)]" : "text-[var(--ask)]"
+          }`}
+        >
+          {level.price.toFixed(2)}
+        </span>
+        <span className="relative flex-1 tabnum text-[var(--ink-400)] text-[10px]">
+          {level.size.toLocaleString()}
+        </span>
+      </motion.div>
+    );
+  };
 
   return (
-    <div className="bg-[#08090C] rounded-md border border-uora-border p-4 h-full flex flex-col font-mono text-[10px] text-slate-300 select-none overflow-hidden relative aspect-[16/10] w-full min-h-[360px] shadow-2xl justify-between">
-      <div className="flex items-center justify-between border-b border-uora-border/60 pb-3 mb-3">
+    <div className="relative rounded-md overflow-hidden border border-[rgba(0,212,255,0.1)] bg-[var(--void-800)]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[rgba(0,212,255,0.07)]">
         <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-uora-cyan" />
-          <span className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">UORA_PIPELINE_PREVIEW</span>
+          <StatusDot status="live" label="LIVE" />
         </div>
-        <div className="text-slate-500 text-[8px] uppercase tracking-widest">Real metrics stream after scoring</div>
+        <span className="text-[10px] font-mono text-[var(--ink-400)] tracking-wider">ORDER BOOK · BTC/USD</span>
+        <span className="text-[10px] font-mono text-[var(--ink-500)]">L2</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-[1.15fr_0.85fr] gap-3.5 flex-1 min-h-0">
-        <div className="border border-uora-border bg-uora-bg/60 p-3 rounded flex flex-col justify-between overflow-hidden">
-          <div className="text-[8px] text-slate-500 uppercase tracking-widest border-b border-uora-border/40 pb-1.5 mb-2 font-bold flex justify-between items-center">
-            <span>Submission Lifecycle</span>
-            <span className="text-uora-cyan text-[7px]">STATEFUL</span>
-          </div>
-          <div className="flex-1 flex flex-col gap-1.5 font-mono text-[8.5px] text-slate-400 overflow-hidden pr-1 justify-end leading-normal">
-            {logs.map((log, index) => (
-              <motion.div
-                key={log}
-                initial={{ opacity: 0, x: -5 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.2, delay: index * 0.05 }}
-                className={log.includes("SCORING") ? "text-uora-success font-bold" : log.includes("VALIDATOR") ? "text-uora-cyan font-bold" : "text-slate-400"}
-              >
-                {log}
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        <div className="border border-uora-border bg-uora-bg/60 p-3 rounded flex flex-col justify-between overflow-hidden">
-          <div className="text-[8px] text-slate-500 uppercase tracking-widest border-b border-uora-border/40 pb-1.5 mb-2 font-bold flex justify-between items-center">
-            <span>Orderbook Validation Shape</span>
-            <span className="text-uora-success text-[7px] font-bold">REFERENCE LOB</span>
-          </div>
-          <div className="flex-1 flex flex-col justify-around gap-1 font-mono text-[8px]">
-            <div className="flex flex-col gap-1 border-b border-uora-border/30 pb-2">
-              {asks.map((width, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-600 w-8">{(143.50 - idx * 0.1).toFixed(2)}</span>
-                  <div className="flex-1 h-2 bg-uora-surface border border-uora-border/40 rounded-sm overflow-hidden flex justify-end">
-                    <motion.div initial={{ width: 0 }} whileInView={{ width: String(width) + "%" }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="bg-red-500/15 border-l border-red-500/50 h-full" />
-                  </div>
-                  <span className="text-red-400/80 w-6 text-right font-bold">{(width * 10).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-1 pt-1">
-              {bids.map((width, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-2">
-                  <span className="text-slate-600 w-8">{(142.70 - idx * 0.1).toFixed(2)}</span>
-                  <div className="flex-1 h-2 bg-uora-surface border border-uora-border/40 rounded-sm overflow-hidden">
-                    <motion.div initial={{ width: 0 }} whileInView={{ width: String(width) + "%" }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="bg-emerald-500/15 border-r border-emerald-500/50 h-full" />
-                  </div>
-                  <span className="text-emerald-400/80 w-6 text-right font-bold">{(width * 10).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Column headers */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[rgba(255,255,255,0.03)]">
+        <span className="flex-1 text-right text-[9px] font-mono text-[var(--ink-500)] uppercase tracking-wider">Size</span>
+        <span className="w-20 text-center text-[9px] font-mono text-[var(--ink-500)] uppercase tracking-wider">Price</span>
+        <span className="flex-1 text-[9px] font-mono text-[var(--ink-500)] uppercase tracking-wider">Size</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 border-t border-uora-border/60 pt-3 mt-3 text-center">
-        <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-uora-cyan tracking-wide uppercase">BUILD</div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">queued worker</div>
-        </div>
-        <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-uora-success tracking-wide uppercase">VALIDATE</div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">reference LOB</div>
-        </div>
-        <div className="border border-uora-border bg-uora-bg/30 p-2 rounded">
-          <div className="text-[11px] font-bold text-slate-300 tracking-wide uppercase">SCORE</div>
-          <div className="text-[7px] text-slate-500 uppercase tracking-widest mt-1">real telemetry</div>
-        </div>
+      {/* Asks (reversed so best ask is closest to mid) */}
+      <div className="flex flex-col">
+        {asks.map((level) => (
+          <Row key={`ask-${level.price}`} level={level} side="ask" maxT={maxTotal} />
+        ))}
+      </div>
+
+      {/* Spread / Last trade */}
+      <div className="flex items-center justify-center gap-3 py-2 border-y border-[rgba(0,212,255,0.06)] bg-[var(--void-900)]">
+        <span
+          className={`text-base font-mono font-bold tabnum ${
+            lastTrade.side === "bid" ? "text-[var(--bid)]" : "text-[var(--ask)]"
+          }`}
+        >
+          {lastTrade.price.toFixed(2)}
+        </span>
+        <span className="text-[9px] font-mono text-[var(--ink-500)] uppercase">
+          SPREAD: 0.25
+        </span>
+      </div>
+
+      {/* Bids */}
+      <div className="flex flex-col">
+        {bids.map((level) => (
+          <Row key={`bid-${level.price}`} level={level} side="bid" maxT={maxTotal} />
+        ))}
+      </div>
+
+      {/* Bot activity strip */}
+      <div className="px-3 py-2 border-t border-[rgba(0,212,255,0.07)] flex items-center gap-2">
+        <Bot className="w-3 h-3 text-[var(--plasma)]" />
+        <span className="text-[9px] font-mono text-[var(--ink-400)]">
+          {Math.floor(Math.random() * 40 + 80)} bots active · {Math.floor(Math.random() * 200 + 800).toLocaleString()} orders/s
+        </span>
       </div>
     </div>
   );
 }
 
-// Stagger entry configurations
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.04,
-    },
-  },
+// ── Pipeline animation (right side of hero) ───────────────────────────────────
+
+const PIPELINE_STAGES = [
+  { id: "upload",    label: "Upload",     sub: "Source code accepted",          icon: "↑", color: "plasma" },
+  { id: "build",     label: "Build",      sub: "gVisor sandbox compile",         icon: "⚙", color: "amber" },
+  { id: "deploy",    label: "Deploy",     sub: "Container isolation enforced",   icon: "⬡", color: "plasma" },
+  { id: "benchmark", label: "Benchmark",  sub: "10k bots · LOBSTER replay",      icon: "⚡", color: "bid" },
+  { id: "validate",  label: "Validate",   sub: "Price-time priority + GED",      icon: "✓", color: "bid" },
+  { id: "score",     label: "Score",      sub: "Composite + ML anomaly",         icon: "★", color: "plasma" },
+];
+
+const colorToken: Record<string, string> = {
+  plasma: "var(--plasma)",
+  bid:    "var(--bid)",
+  amber:  "#F0B90B",
 };
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 12, scale: 0.99 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      duration: 0.5,
-      ease: [0.16, 1, 0.3, 1] as const,
-    },
-  },
-};
+function PipelineAnimation() {
+  const [active, setActive] = useState(0);
+  const [completed, setCompleted] = useState<Set<number>>(new Set());
 
-// Premium features grid stagger configurations
-const gridContainerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.05,
-      delayChildren: 0.02,
-    },
-  },
-};
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActive((prev) => {
+        const next = (prev + 1) % PIPELINE_STAGES.length;
+        if (next === 0) setCompleted(new Set());
+        else setCompleted((c) => new Set([...c, prev]));
+        return next;
+      });
+    }, 1400);
+    return () => clearInterval(interval);
+  }, []);
 
-const gridItemVariants = {
-  hidden: { opacity: 0, y: 10, scale: 0.99 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      duration: 0.4,
-      ease: [0.16, 1, 0.3, 1] as const,
-    },
-  },
-};
+  return (
+    <div className="relative rounded-md overflow-hidden border border-[rgba(0,212,255,0.1)] bg-[var(--void-800)] p-4">
+      <div className="label-mono mb-4">Benchmark Pipeline</div>
 
-const pipeline = [
+      <div className="flex flex-col gap-0">
+        {PIPELINE_STAGES.map((stage, i) => {
+          const isActive = active === i;
+          const isDone = completed.has(i);
+          const color = colorToken[stage.color];
+
+          return (
+            <div key={stage.id} className="flex items-stretch gap-3">
+              {/* Connector line */}
+              <div className="flex flex-col items-center w-6 flex-shrink-0">
+                <motion.div
+                  animate={{
+                    backgroundColor: isActive ? color : isDone ? colorToken.bid : "rgba(255,255,255,0.06)",
+                    boxShadow: isActive ? `0 0 8px ${color}` : "none",
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-mono font-bold flex-shrink-0"
+                  style={{ color: isActive || isDone ? "#000" : "var(--ink-500)" }}
+                >
+                  {isDone ? "✓" : stage.icon}
+                </motion.div>
+                {i < PIPELINE_STAGES.length - 1 && (
+                  <motion.div
+                    animate={{
+                      backgroundColor: isDone ? colorToken.bid : "rgba(255,255,255,0.05)",
+                    }}
+                    transition={{ duration: 0.4 }}
+                    className="w-[1px] flex-1 my-0.5"
+                  />
+                )}
+              </div>
+
+              {/* Stage info */}
+              <div className="pb-3 flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-xs font-mono font-semibold"
+                    style={{ color: isActive ? color : isDone ? colorToken.bid : "var(--ink-300)" }}
+                  >
+                    {stage.label}
+                  </span>
+                  {isActive && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: [0, 1, 0] }}
+                      transition={{ duration: 1, repeat: Infinity }}
+                      className="text-[9px] font-mono tracking-wider"
+                      style={{ color }}
+                    >
+                      RUNNING
+                    </motion.span>
+                  )}
+                </div>
+                <p className="text-[10px] text-[var(--ink-500)] font-mono mt-0.5 truncate">
+                  {stage.sub}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Score reveal at end */}
+      <motion.div
+        animate={{
+          opacity: active === PIPELINE_STAGES.length - 1 ? 1 : 0.3,
+          scale: active === PIPELINE_STAGES.length - 1 ? 1 : 0.97,
+        }}
+        className="mt-2 p-3 rounded bg-[var(--void-900)] border border-[rgba(0,212,255,0.08)] flex items-center justify-between"
+      >
+        <span className="text-[10px] font-mono text-[var(--ink-400)]">COMPOSITE SCORE</span>
+        <span className="text-lg font-mono font-bold text-[var(--plasma)] tabnum">
+          {active === PIPELINE_STAGES.length - 1 ? "94.7" : "—"}
+        </span>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Feature cards ─────────────────────────────────────────────────────────────
+
+const FEATURES = [
   {
-    label: "Code Validation",
-    detail: "Submit optimized C++20, Rust, or Go source files representing low-latency matching engines.",
-    icon: UploadCloud,
-    tone: "text-uora-cyan",
+    icon: Lock,
+    title: "Secure Sandboxing",
+    desc: "gVisor runtime + seccomp-bpf deny-by-default. Every submission runs in a sealed container with CPU and memory constraints. Zero host escape.",
+    color: "plasma",
   },
   {
-    label: "gVisor Jail Sandbox",
-    detail: "Containers are locked within a secure userspace kernel context running seccomp-bpf syscall security rules.",
-    icon: LockKeyhole,
-    tone: "text-uora-success",
-  },
-  {
-    label: "Market Replay Feed",
-    detail: "Replays real historical LOBSTER high-frequency trading logs into the isolated engine instances.",
     icon: Bot,
-    tone: "text-uora-warning",
+    title: "Distributed Bot Fleet",
+    desc: "Asyncio-powered fleet replaying deterministic LOBSTER order flow. Thousands of concurrent bots. FIX + REST protocol support.",
+    color: "bid",
   },
   {
-    label: "Telemetry Scoring",
-    detail: "Measures throughput and ticks latencies down to the nanosecond, producing composite scores.",
-    icon: Gauge,
-    tone: "text-uora-blue",
+    icon: Radio,
+    title: "Real-Time Telemetry",
+    desc: "Envoy ingests every tick into TimescaleDB. p50/p90/p99 latency, max TPS, correctness rate — all streamed live via Redis Pub/Sub.",
+    color: "plasma",
+  },
+  {
+    icon: LayoutDashboard,
+    title: "Live Leaderboard",
+    desc: "Server-Sent Events push rank updates to the dashboard the moment a benchmark completes. Composite score = throughput × correctness / latency².",
+    color: "bid",
   },
 ];
 
-const uoraFeatures = [
+function FeatureCard({
+  icon: Icon,
+  title,
+  desc,
+  color,
+  index,
+}: (typeof FEATURES)[0] & { index: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-60px" });
+  const c = color === "plasma" ? "var(--plasma)" : "var(--bid)";
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 24 }}
+      animate={inView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.5, delay: index * 0.08 }}
+      className="glass rounded-md p-5 flex flex-col gap-3 group hover:border-[rgba(0,212,255,0.2)] transition-colors"
+    >
+      <div
+        className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0"
+        style={{ background: `${c}15`, border: `1px solid ${c}25` }}
+      >
+        <Icon className="w-4 h-4" style={{ color: c }} />
+      </div>
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--ink-100)] mb-1">{title}</h3>
+        <p className="text-xs text-[var(--ink-400)] leading-relaxed">{desc}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Architecture section ──────────────────────────────────────────────────────
+
+const ARCH_LAYERS = [
   {
-    title: "Secure Isolation Sandbox",
-    icon: ShieldCheck,
-    desc: "Matching engines submitted to the harness run within a hyper-isolated environment using Google's gVisor userspace kernel. This completely traps malicious execution, preventing host kernel leaks while allowing strict seccomp-bpf validation.",
+    layer: "Submission & Sandbox",
+    components: ["FastAPI", "BuildKit", "gVisor", "seccomp-bpf", "MinIO"],
+    color: "plasma",
   },
   {
-    title: "Deterministic LOBSTER Replay",
-    icon: Activity,
-    desc: "We feed engine binaries with real-world, nanosecond-stamped orderbook events from Nasdaq historical LOBSTER logs. This replicates extreme high-density market situations to test engine reliability under pressure.",
+    layer: "Benchmark & Validation",
+    components: ["Bot Fleet", "Reference LOB", "GED Engine", "LOBSTER Replay"],
+    color: "bid",
   },
   {
-    title: "ML Anomaly Classification",
-    icon: Cpu,
-    desc: "An Isolation Forest detector analyzes benchmark feature vectors, including error rate, throughput variance, and latency shape, to flag runs that need manual review.",
+    layer: "Telemetry & Scoring",
+    components: ["Envoy Proxy", "TimescaleDB", "Isolation Forest", "PDF Scorer"],
+    color: "amber",
   },
   {
-    title: "Graph Edit Distance Validation",
-    icon: Binary,
-    desc: "Ensures strict Price-Time priority. Submissions are compared in real-time against a shadow reference Orderbook. Any structural discrepancies are detected using advanced Graph Edit Distance (GED) on L3/L4 order topologies.",
-  },
-  {
-    title: "High-Frequency Telemetry",
-    icon: Radio,
-    desc: "TimescaleDB telemetry databases store and aggregate tick measurements. Custom Envoy network proxies intercept and stamp transaction packets, which are pushed in real-time to the Next.js console via Redis Pub/Sub SSE nodes.",
-  },
-  {
-    title: "Automated Audit Signatures",
-    icon: Boxes,
-    desc: "Every successful deployment generates a signed cryptographic audit report containing comprehensive latency histograms, throughput graphs, and verification fingerprints suitable for institutional compliance review.",
+    layer: "Leaderboard & UI",
+    components: ["Next.js 15", "Redis Pub/Sub", "SSE Stream", "ECharts"],
+    color: "plasma",
   },
 ];
+
+function ArchLayer({
+  layer,
+  components,
+  color,
+  index,
+}: (typeof ARCH_LAYERS)[0] & { index: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-40px" });
+  const c = colorToken[color];
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, x: -20 }}
+      animate={inView ? { opacity: 1, x: 0 } : {}}
+      transition={{ duration: 0.45, delay: index * 0.1 }}
+      className="flex items-start gap-4"
+    >
+      <div
+        className="flex-shrink-0 w-1 self-stretch rounded-full"
+        style={{ background: `linear-gradient(to bottom, ${c}, ${c}30)` }}
+      />
+      <div className="flex-1 pb-6">
+        <div className="text-xs font-mono font-semibold text-[var(--ink-200)] mb-2">{layer}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {components.map((comp) => (
+            <span
+              key={comp}
+              className="px-2 py-0.5 rounded text-[10px] font-mono"
+              style={{
+                background: `${c}0D`,
+                border: `1px solid ${c}20`,
+                color: c,
+              }}
+            >
+              {comp}
+            </span>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Stats ticker ──────────────────────────────────────────────────────────────
+
+const TICKER_ITEMS = [
+  "p99 latency · 0.52ms",
+  "throughput · 1.24M TPS",
+  "correctness · 99.97%",
+  "sandbox isolation · gVisor + seccomp",
+  "bot fleet · async 10k concurrent",
+  "LOBSTER replay · deterministic",
+  "scoring formula · (TPS × correctness) / p99²",
+  "validation levels · L1 → L4",
+];
+
+function StatsTicker() {
+  const doubled = [...TICKER_ITEMS, ...TICKER_ITEMS];
+  return (
+    <div className="overflow-hidden border-y border-[rgba(0,212,255,0.06)] py-2.5 bg-[var(--void-900)]">
+      <motion.div
+        animate={{ x: ["0%", "-50%"] }}
+        transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+        className="flex gap-8 whitespace-nowrap"
+      >
+        {doubled.map((item, i) => (
+          <span key={i} className="flex items-center gap-2 text-[10px] font-mono text-[var(--ink-500)] uppercase tracking-wider">
+            <span className="w-1 h-1 rounded-full bg-[var(--plasma)] flex-shrink-0" />
+            {item}
+          </span>
+        ))}
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
+  const heroRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(heroRef, { once: true });
+
   return (
-    <main className="min-h-screen relative overflow-hidden bg-uora-bg text-slate-100 bg-dot-pattern">
-      <div className="absolute inset-0 bg-grid-pattern opacity-40 pointer-events-none" />
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-uora-cyan/50 to-transparent" />
-
-      {/* Decorative radial glows */}
-      <div className="absolute -top-[25%] -left-[10%] w-[55%] h-[55%] rounded-full bg-uora-cyan/5 blur-[140px] pointer-events-none" />
-      <div className="absolute -bottom-[25%] -right-[10%] w-[55%] h-[55%] rounded-full bg-uora-success/5 blur-[140px] pointer-events-none" />
-
-      <div className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col px-6 py-6 sm:px-8 lg:px-12">
-        {/* Navigation Header */}
-        <motion.header
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between border-b border-uora-border/60 pb-5"
-        >
-          <UoraLogo size="md" />
-          <div className="flex items-center gap-3">
-            <Link
-              href="/auth"
-              className="hidden rounded-md border border-uora-border bg-uora-surface px-4 py-2 text-xs font-mono tracking-wider text-slate-300 transition-all hover:border-uora-cyan/40 hover:text-white sm:inline-flex"
-            >
-              SIGN IN
-            </Link>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-md border border-uora-cyan/35 bg-uora-cyan/10 px-4 py-2 text-xs font-mono tracking-wider text-uora-cyan shadow-[0_0_15px_rgba(226,181,62,0.1)] transition-all hover:bg-uora-cyan/20"
-            >
-              LAUNCH CONSOLE
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </div>
-        </motion.header>
-
-        {/* Hero Section */}
-        <section className="grid flex-1 items-center gap-12 py-16 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="max-w-3xl"
-          >
-            <motion.div
-              variants={itemVariants}
-              className="inline-flex items-center gap-2 rounded-full border border-uora-cyan/20 bg-uora-cyan/5 px-3 py-1 text-[11px] font-mono tracking-widest text-uora-cyan mb-6 uppercase"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-uora-cyan animate-pulse" />
-              Unified Orderbook Resilience Architecture
-            </motion.div>
-            
-            <motion.h1
-              variants={itemVariants}
-              className="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl font-sans leading-[1.1]"
-            >
-              Deterministic High-Concurrency Matching Engine Telemetry & Validation
-            </motion.h1>
-            
-            <motion.p
-              variants={itemVariants}
-              className="mt-6 max-w-2xl text-base leading-relaxed text-slate-400"
-            >
-              UORA is an advanced distributed orchestrator that securely isolates, compiles, and 
-              benchmarks proprietary matching engines. Running within secure userspace sandboxes, 
-              we replay dense Nasdaq-LOBSTER order histories to rigorously evaluate mathematical 
-              correctness and nano-latency compliance.
-            </motion.p>
-            
-            <motion.div variants={itemVariants} className="mt-10 flex flex-wrap gap-4">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-uora-cyan px-6 py-3.5 text-xs font-mono tracking-widest font-bold text-uora-bg hover:opacity-90 shadow-[0_0_20px_rgba(226,181,62,0.2)] transition-all"
-              >
-                LAUNCH OPERATIONAL CONSOLE
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+    <div className="min-h-screen bg-[var(--void-950)] text-[var(--ink-200)]">
+      {/* Nav */}
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(1,5,9,0.9)] backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-14 items-center justify-between">
+            <Logo size="sm" />
+            <div className="flex items-center gap-3">
+              <StatusDot status="live" label="Platform online" />
+              <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono text-[var(--ink-500)] border-l border-[rgba(255,255,255,0.06)] pl-3">
+                <span>IICPC</span>
+                <ChevronRight className="w-3 h-3" />
+                <span>2026</span>
+              </div>
               <Link
                 href="/auth"
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-uora-border bg-uora-surface px-6 py-3.5 text-xs font-mono tracking-widest font-semibold text-slate-200 hover:border-uora-cyan/40 hover:bg-uora-elevated transition-all"
+                className="btn-plasma text-xs px-4 py-2"
               >
-                SUBMIT ENGINE CODE
+                Launch Console
+                <ArrowRight className="w-3.5 h-3.5" />
               </Link>
-            </motion.div>
-          </motion.div>
-
-          {/* Right Hardware/Console Graphic Mockup */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.6, ease: "easeOut" }}
-            className="relative"
-          >
-            <div className="rounded-md border border-uora-border bg-uora-surface shadow-2xl shadow-black/80 overflow-hidden relative">
-              
-              {/* Animated scanline grid overlays */}
-              <div className="absolute inset-0 bg-scanlines pointer-events-none opacity-20" />
-
-              {/* Terminal Title Bar */}
-              <div className="flex items-center justify-between border-b border-uora-border px-5 py-4 bg-uora-bg/60 relative z-10">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-uora-error/40" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-uora-warning/40" />
-                    <span className="w-2.5 h-2.5 rounded-full bg-uora-success/40" />
-                  </div>
-                  <span className="text-xs font-mono text-slate-500 ml-2">UORA // TELEMETRY_STATION_A</span>
-                </div>
-                <div className="flex items-center gap-2 rounded border border-uora-success/30 bg-uora-success/5 px-2.5 py-1 text-[10px] font-mono text-uora-success uppercase">
-                  <span className="h-1.5 w-1.5 rounded-full bg-uora-success animate-pulse mr-1" />
-                  Live Core Feed
-                </div>
-              </div>
-
-              {/* Steps Layout */}
-              <div className="grid gap-4 p-6 sm:grid-cols-2 relative z-10">
-                {pipeline.map(({ label, detail, icon: Icon, tone }, index) => (
-                  <motion.div
-                    key={label}
-                    whileHover={{ y: -2, borderColor: "rgba(226, 181, 98, 0.3)", backgroundColor: "rgba(15, 17, 23, 0.8)" }}
-                    className="relative overflow-hidden rounded-md border border-uora-border/60 bg-uora-bg/40 p-4 transition-all duration-300 group"
-                  >
-                    <div className="absolute right-4 top-4 font-mono text-[10px] text-slate-700 font-bold group-hover:text-uora-cyan transition-colors">
-                      [0{index + 1}]
-                    </div>
-                    <Icon className={`mb-4 h-5 w-5 ${tone} opacity-85 group-hover:scale-105 transition-transform`} />
-                    <div className="text-sm font-semibold text-white font-mono tracking-wide">{label}</div>
-                    <div className="mt-1.5 text-xs text-slate-500 font-sans leading-relaxed">{detail}</div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Graphical Trace Flow & Statistics */}
-              <div className="grid border-t border-uora-border bg-uora-bg/20 lg:grid-cols-[1.1fr_0.9fr] relative z-10">
-                <div className="min-h-[220px] rounded-md border border-uora-border bg-uora-bg/80 p-5 m-6 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">Nano-Latency Wave</span>
-                    <LineChart className="h-3.5 w-3.5 text-uora-cyan animate-pulse" />
-                  </div>
-                  
-                  {/* SVG chart with animated order-flow paths */}
-                  <svg viewBox="0 0 520 180" className="h-36 w-full overflow-visible" aria-hidden>
-                    <defs>
-                      <linearGradient id="trace-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop stopColor="#E2B53E" stopOpacity="0.25" />
-                        <stop offset="1" stopColor="#E2B53E" stopOpacity="0" />
-                      </linearGradient>
-                      <filter id="glow-trace" x="-20%" y="-20%" width="140%" height="140%">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                    </defs>
-                    
-                    {/* Gridlines */}
-                    {[30, 60, 90, 120, 150].map((y) => (
-                      <line key={y} x1="0" x2="520" y1={y} y2={y} stroke="#1b2533" strokeWidth="0.5" strokeDasharray="3 3" />
-                    ))}
-                    {[90, 180, 270, 360, 450].map((x) => (
-                      <line key={x} x1={x} x2={x} y1="0" y2="180" stroke="#1b2533" strokeWidth="0.5" strokeDasharray="3 3" />
-                    ))}
-
-                    {/* Gradient area trace under baseline */}
-                    <motion.path
-                      d="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66 L520 180 L0 180 Z"
-                      fill="url(#trace-fill)"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.4, duration: 1 }}
-                    />
-
-                    {/* Gold Base trace */}
-                    <motion.path
-                      d="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66"
-                      fill="none"
-                      stroke="#E2B53E"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      initial={{ pathLength: 0 }}
-                      animate={{ pathLength: 1 }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                    />
-
-                    {/* Cyber Mint animated flowing overlay trace (concurrency pulses) */}
-                    <motion.path
-                      d="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66"
-                      fill="none"
-                      stroke="#10B981"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeDasharray="10 15"
-                      opacity="0.8"
-                      animate={{
-                        strokeDashoffset: [0, -50],
-                      }}
-                      transition={{
-                        duration: 3,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                    />
-
-                    {/* Oscilloscope glowing gold laser tracer dot */}
-                    <motion.circle
-                      r="4.5"
-                      fill="#FFD875"
-                      filter="url(#glow-trace)"
-                    >
-                      <animateMotion
-                        path="M0 132 C 55 120, 74 82, 112 95 S 180 150, 229 110 S 301 56, 356 84 S 444 146, 520 66"
-                        dur="3.5s"
-                        repeatCount="indefinite"
-                      />
-                    </motion.circle>
-                  </svg>
-                  
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 border-t border-uora-border/60 pt-2">
-                    <span className="text-uora-success">P99.9 Latency: 8.42μs</span>
-                    <span className="text-slate-400">Scale: 69,348 tx/sec</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 py-6 pr-6 pl-6 lg:pl-0 justify-center">
-                  {[
-                    { label: "Isolation", value: "Secure gVisor VM", icon: ShieldCheck },
-                    { label: "Telemetry", value: "Polars / Timescale", icon: Activity },
-                    { label: "Speed", value: "Envoy Proxy Lua", icon: Zap },
-                    { label: "Audit Ledger", value: "SHA-256 Signatures", icon: Boxes },
-                  ].map(({ label, value, icon: Icon }) => (
-                    <div
-                      key={label}
-                      className="flex items-center justify-between rounded-md border border-uora-border bg-uora-bg/40 px-4 py-3 hover:border-uora-cyan/35 hover:bg-uora-bg/75 transition-all duration-300"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="h-4 w-4 text-uora-cyan" />
-                        <span className="text-xs font-mono text-slate-400 uppercase tracking-wide">{label}</span>
-                      </div>
-                      <span className="font-mono text-xs font-bold text-slate-200">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
-          </motion.div>
-        </section>
-
-        {/* Telemetry Visual Console Section (Floating asset preview) */}
-        <section className="py-20 border-t border-uora-border/60 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-uora-cyan/5 to-transparent pointer-events-none" />
-          <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] items-center relative z-10">
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="max-w-xl"
-            >
-              <div className="inline-flex items-center gap-2 rounded-full border border-uora-cyan/20 bg-uora-cyan/5 px-3 py-1 text-[10px] font-mono tracking-widest text-uora-cyan mb-4 uppercase">
-                High-Frequency Operational View
-              </div>
-              <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl font-sans leading-tight">
-                High-Frequency Telemetry Dashboards
-              </h2>
-              <p className="mt-5 text-sm leading-relaxed text-slate-400 font-sans">
-                UORA parses transaction packets down to nanosecond resolution. The matching core reports 
-                bids, asks, queue structures, and throughput metrics instantly, rendering them on a consolidated 
-                real-time terminal. Spot bottlenecks, analyze latency jitter profiles, and inspect compiler execution pipelines.
-              </p>
-              
-              <div className="mt-8 grid grid-cols-2 gap-4">
-                <div className="border border-uora-border bg-uora-surface p-4 rounded-md">
-                  <div className="text-xl font-mono font-bold text-uora-cyan">8.42μs</div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase mt-1 tracking-wider">Median Latency</div>
-                </div>
-                <div className="border border-uora-border bg-uora-surface p-4 rounded-md">
-                  <div className="text-xl font-mono font-bold text-uora-success">99.98%</div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase mt-1 tracking-wider">CPU Efficiency</div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Premium Floating Dashboard Preview Image */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 30 }}
-              whileInView={{ opacity: 1, scale: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.15 }}
-              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] as const }}
-              className="relative"
-            >
-              <div className="rounded-md border border-uora-border bg-uora-surface/30 p-2 shadow-[0_0_50px_rgba(0,0,0,0.8)] hover:border-uora-cyan/35 transition-colors duration-500 group animate-float relative overflow-hidden">
-                {/* Corner tech lines */}
-                <div className="absolute -top-px -left-px w-6 h-6 border-t-2 border-l-2 border-uora-cyan rounded-tl-md pointer-events-none z-10" />
-                <div className="absolute -top-px -right-px w-6 h-6 border-t-2 border-r-2 border-uora-cyan rounded-tr-md pointer-events-none z-10" />
-                <div className="absolute -bottom-px -left-px w-6 h-6 border-b-2 border-l-2 border-uora-cyan rounded-bl-md pointer-events-none z-10" />
-                <div className="absolute -bottom-px -right-px w-6 h-6 border-b-2 border-r-2 border-uora-cyan rounded-br-md pointer-events-none z-10" />
-
-                {/* Floating inner glow */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-uora-cyan/5 via-transparent to-uora-success/5 pointer-events-none opacity-40 group-hover:opacity-80 transition-opacity duration-700 rounded-md" />
-                
-                <TelemetryConsoleWidget />
-              </div>
-            </motion.div>
           </div>
-        </section>
+        </div>
+      </nav>
 
-        {/* Dynamic Architectures Specifications Section */}
-        <section className="py-20 border-t border-uora-border/60 relative">
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-uora-surface/10 to-transparent pointer-events-none" />
-          
-          <div className="relative mb-14 text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 rounded-full border border-uora-cyan/20 bg-uora-cyan/5 px-3 py-1 text-[10px] font-mono tracking-widest text-uora-cyan mb-4 uppercase">
-              Robust Core Architecture
+      {/* Hero */}
+      <section
+        ref={heroRef}
+        className="relative min-h-screen pt-14 flex flex-col overflow-hidden"
+      >
+        {/* Background */}
+        <div className="absolute inset-0 bg-grid-plasma pointer-events-none" />
+        <div className="absolute inset-0 plasma-glow-bg pointer-events-none" />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(ellipse 70% 60% at 50% 10%, rgba(0,212,255,0.05) 0%, transparent 60%)",
+          }}
+        />
+
+        <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-16 pb-12 flex-1 flex flex-col">
+          {/* Eyebrow */}
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.5 }}
+            className="flex items-center gap-3 mb-6"
+          >
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)] text-[10px] font-mono text-[var(--plasma)] tracking-wider uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--plasma)] animate-pulse" />
+              IICPC Summer Hackathon 2026
+            </span>
+          </motion.div>
+
+          {/* Headline */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="max-w-4xl mb-4"
+          >
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-[var(--ink-0)] leading-[1.08]">
+              Benchmark Your{" "}
+              <span
+                className="font-mono"
+                style={{
+                  backgroundImage: "linear-gradient(135deg, #00D4FF 0%, #00AACC 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Matching Engine
+              </span>
+              <br />
+              at Microsecond Scale
+            </h1>
+          </motion.div>
+
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="text-sm sm:text-base text-[var(--ink-300)] max-w-2xl mb-8 leading-relaxed"
+          >
+            Upload your trading infrastructure. UORA containerizes it inside a gVisor
+            sandbox, bombards it with a distributed fleet of bots replaying real LOBSTER
+            order flow, and streams live latency + correctness telemetry to a ranked
+            leaderboard.
+          </motion.p>
+
+          {/* CTA */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.45, delay: 0.3 }}
+            className="flex flex-wrap items-center gap-3 mb-12"
+          >
+            <Link href="/auth" className="btn-plasma text-sm">
+              Submit Your Engine
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link href="/dashboard" className="btn-ghost text-sm">
+              View Live Leaderboard
+            </Link>
+          </motion.div>
+
+          {/* Split hero panels */}
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.65, delay: 0.4 }}
+            className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1"
+          >
+            <div>
+              <div className="label-mono mb-3 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--plasma)] animate-pulse" />
+                Live Order Book · Simulated
+              </div>
+              <LiveOrderbook />
             </div>
-            <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl font-sans">
-              Decoupled Multi-Layer Distributed Telemetry
+            <div>
+              <div className="label-mono mb-3 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--bid)] animate-pulse" />
+                Benchmark Pipeline
+              </div>
+              <PipelineAnimation />
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Ticker */}
+      <StatsTicker />
+
+      {/* Features */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-12 text-center">
+            <div className="label-mono mb-3 text-[var(--plasma)]">Platform Architecture</div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--ink-100)] tracking-tight">
+              Four Components, One Pipeline
             </h2>
-            <p className="mt-4 text-sm leading-relaxed text-slate-400">
-              UORA is constructed using event-driven sandboxed microservices optimized for horizontal scaling, 
-              ensuring zero impact on host machines while collecting deterministic execution logs.
+            <p className="mt-3 text-sm text-[var(--ink-400)] max-w-xl mx-auto">
+              Every requirement from the IICPC spec, built to production standards
+              with deterministic correctness guarantees.
             </p>
           </div>
-
-          <motion.div
-            variants={gridContainerVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.20 }}
-            className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            {uoraFeatures.map(({ title, icon: Icon, desc }, idx) => (
-              <motion.div
-                key={title}
-                variants={gridItemVariants}
-                whileHover={{ y: -3, borderColor: "rgba(226, 181, 62, 0.3)" }}
-                className="bg-uora-surface border border-uora-border rounded-md p-6 flex flex-col justify-between hover:shadow-[0_4px_20px_rgba(0,0,0,0.4)] transition-all duration-300"
-              >
-                <div>
-                  <div className="w-10 h-10 rounded-md bg-uora-bg border border-uora-border flex items-center justify-center mb-5">
-                    <Icon className="w-5 h-5 text-uora-cyan" />
-                  </div>
-                  <h3 className="text-base font-semibold text-white font-mono tracking-wide mb-3">{title}</h3>
-                  <p className="text-xs text-slate-400 font-sans leading-relaxed">{desc}</p>
-                </div>
-                
-                <div className="border-t border-uora-border/60 pt-4 mt-6 flex justify-between items-center text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-                  <span>Audit Stage 0{idx + 1}</span>
-                  <span className="text-uora-success">Status: SECURE</span>
-                </div>
-              </motion.div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {FEATURES.map((f, i) => (
+              <FeatureCard key={f.title} {...f} index={i} />
             ))}
-          </motion.div>
-        </section>
+          </div>
+        </div>
+      </section>
 
-        {/* Low Latency Quant C++ Benchmark Example */}
-        <section className="py-16 border-t border-uora-border/60">
-          <div className="grid gap-12 lg:grid-cols-2 items-center">
-            
+      {/* Architecture */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-[var(--void-900)]">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-uora-cyan/20 bg-uora-cyan/5 px-3 py-1 text-[10px] font-mono tracking-widest text-uora-cyan mb-4 uppercase">
-                Optimized SDK Execution
-              </div>
-              <h2 className="text-3xl font-bold tracking-tight text-white font-sans">
-                Ultra-Low Latency Lock-Free Reference Models
+              <div className="label-mono mb-3 text-[var(--plasma)]">System Design</div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[var(--ink-100)] tracking-tight mb-4">
+                Four-Layer Distributed Architecture
               </h2>
-              <p className="mt-5 text-sm leading-relaxed text-slate-400 font-sans">
-                Our Contestant SDK includes C++20 and Rust baseline engines that showcase state-of-the-art ring 
-                buffer patterns. Using cache-aligned data models and thread-pinned worker threads, submissions 
-                consistently process high-throughput event loops at sub-microsecond bounds.
+              <p className="text-sm text-[var(--ink-400)] leading-relaxed mb-6">
+                UORA is fully decoupled across four horizontal layers. Each layer
+                communicates via Redis Streams, Pub/Sub, or direct REST — designed
+                for independent scaling and fault isolation.
               </p>
-
-              <div className="mt-8 space-y-4">
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-uora-cyan/10 border border-uora-cyan/25 flex items-center justify-center flex-shrink-0 text-xs font-bold font-mono text-uora-cyan">1</div>
-                  <div>
-                    <h4 className="text-xs font-mono font-bold text-white uppercase tracking-wider">Zero Dynamic Allocations</h4>
-                    <p className="text-xs text-slate-500 mt-1 font-sans">Prevent heap interruptions during transaction evaluation loops.</p>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-uora-success/10 border border-uora-success/25 flex items-center justify-center flex-shrink-0 text-xs font-bold font-mono text-uora-success">2</div>
-                  <div>
-                    <h4 className="text-xs font-mono font-bold text-white uppercase tracking-wider">Lock-Free Queue Layout</h4>
-                    <p className="text-xs text-slate-500 mt-1 font-sans">Leverage atomic memory barriers for lightning-fast inter-thread message processing.</p>
-                  </div>
-                </div>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { icon: Globe, label: "Kubernetes-ready" },
+                  { icon: GitBranch, label: "IaC with Terraform" },
+                  { icon: Cpu, label: "CPU-pinned sandboxes" },
+                  { icon: Zap, label: "Sub-ms latency" },
+                  { icon: ShieldCheck, label: "gVisor isolation" },
+                  { icon: Code2, label: "C++ / Rust / Go" },
+                  { icon: CheckCircle, label: "GED validation" },
+                ].map(({ icon: Icon, label }) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded glass text-[11px] font-mono text-[var(--ink-300)]"
+                  >
+                    <Icon className="w-3 h-3 text-[var(--plasma)] opacity-70" />
+                    {label}
+                  </span>
+                ))}
               </div>
             </div>
-
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="rounded-md border border-uora-border bg-[#050608] shadow-2xl overflow-hidden font-mono text-[11px] text-slate-300"
-            >
-              <div className="flex items-center justify-between px-5 py-3 border-b border-uora-border bg-[#0D0F13]">
-                <div className="flex items-center gap-2">
-                  <FileCode className="w-3.5 h-3.5 text-uora-cyan" />
-                  <span className="text-xs text-slate-400">LockFreeQueue.hpp</span>
-                </div>
-                <span className="text-[9px] text-slate-600 tracking-wider">C++20 COMPATIBLE</span>
-              </div>
-              <div className="p-5 overflow-x-auto leading-relaxed bg-[#050608]/90">
-                <pre className="text-left font-mono">
-                  <code>
-{`#pragma once
-#include <atomic>
-#include <new>
-
-template <typename T, size_t Capacity>
-class LockFreeQueue {
-private:
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power of 2");
-    
-    struct alignas(64) Node {
-        T data;
-        std::atomic<size_t> sequence;
-    };
-
-    Node* const m_buffer;
-    const size_t m_mask;
-    
-    alignas(64) std::atomic<size_t> m_enqueuePos;
-    alignas(64) std::atomic<size_t> m_dequeuePos;
-
-public:
-    explicit LockFreeQueue()
-        : m_buffer(new Node[Capacity])
-        , m_mask(Capacity - 1)
-        , m_enqueuePos(0)
-        , m_dequeuePos(0)
-    {
-        for (size_t i = 0; i < Capacity; ++i) {
-            m_buffer[i].sequence.store(i, std::memory_order_relaxed);
-        }
-    }
-};`}
-                  </code>
-                </pre>
-              </div>
-            </motion.div>
-
+            <div>
+              {ARCH_LAYERS.map((l, i) => (
+                <ArchLayer key={l.layer} {...l} index={i} />
+              ))}
+            </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* Systems Statistics / Dynamic Counter Bar */}
-        <section className="py-12 border-t border-uora-border/60">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            {[
-              { stat: "69,348", label: "Max Ingested Orders/s", tone: "text-uora-cyan" },
-              { stat: "< 240ns", label: "Kernel Execution Penalty", tone: "text-uora-success" },
-              { stat: "100.0%", label: "L3 Priority Determinism", tone: "text-uora-warning" },
-              { stat: "8-Vector", label: "ML Classification Dimensions", tone: "text-uora-blue" },
-            ].map(({ stat, label, tone }) => (
-              <div key={label} className="p-4 bg-uora-surface/20 border border-uora-border rounded-md">
-                <div className={`text-2xl sm:text-3xl font-mono font-bold tracking-tight ${tone}`}>{stat}</div>
-                <div className="text-[10px] font-mono uppercase text-slate-500 tracking-wider mt-2">{label}</div>
-              </div>
-            ))}
+      {/* CTA */}
+      <section className="relative py-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+        <div className="absolute inset-0 bg-grid-faint pointer-events-none" />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,212,255,0.05) 0%, transparent 70%)",
+          }}
+        />
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          <div className="label-mono mb-4 text-[var(--plasma)]">Ready to compete?</div>
+          <h2 className="text-3xl sm:text-4xl font-black text-[var(--ink-0)] tracking-tight mb-4">
+            Submit Your Matching Engine
+          </h2>
+          <p className="text-sm text-[var(--ink-400)] mb-8 max-w-lg mx-auto leading-relaxed">
+            Supports C++20, Rust, and Go. Upload your source, watch the pipeline run,
+            and see your name on the leaderboard in under two minutes.
+          </p>
+          <Link href="/auth" className="btn-plasma text-sm px-8 py-3">
+            Launch the Console
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-[rgba(255,255,255,0.05)] py-8 px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <Logo size="xs" />
+          <div className="flex items-center gap-4 text-[10px] font-mono text-[var(--ink-500)] uppercase tracking-wider">
+            <span>IICPC Summer Hackathon 2026</span>
+            <span>·</span>
+            <span>Unified Orderbook Resilience Architecture</span>
           </div>
-        </section>
-
-        {/* Footer */}
-        <footer className="mt-auto border-t border-uora-border/60 pt-6 pb-2 text-center text-[10px] font-mono text-slate-600 uppercase tracking-[0.2em] flex flex-col sm:flex-row justify-between items-center gap-4">
-          <span>&copy; {new Date().getFullYear()} UORA PLATFORM // ALL RIGHTS RESERVED</span>
-          <span>SECURED BY GVISOR SANDBOXING TELEMETRY</span>
-        </footer>
-      </div>
-    </main>
+        </div>
+      </footer>
+    </div>
   );
 }

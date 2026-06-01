@@ -1,126 +1,86 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Activity,
-  BarChart3,
+  BarChart2,
+  Clock,
+  FileText,
   LayoutDashboard,
-  Radar,
+  ShieldCheck,
   Upload,
-  TrendingUp,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 
-const sidebarLinks = [
-  {
-    href: "/dashboard",
-    label: "Leaderboard",
-    icon: LayoutDashboard,
-    section: "overview",
-  },
-  {
-    href: "/dashboard",
-    label: "Latency",
-    icon: Activity,
-    section: "latency",
-  },
-  {
-    href: "/dashboard",
-    label: "Throughput",
-    icon: BarChart3,
-    section: "throughput",
-  },
-  {
-    href: "/dashboard",
-    label: "Anomaly",
-    icon: Radar,
-    section: "anomaly",
-  },
-  {
-    href: "/dashboard",
-    label: "Market Replay",
-    icon: TrendingUp,
-    section: "market",
-  },
-  {
-    href: "/dashboard",
-    label: "Submit",
-    icon: Upload,
-    section: "submit",
-  },
+export type SidebarSection =
+  | "submit"
+  | "timeline"
+  | "leaderboard"
+  | "latency"
+  | "validation"
+  | "reports";
+
+const LINKS: { id: SidebarSection; label: string; icon: React.ElementType; badge?: string }[] = [
+  { id: "submit",      label: "Submit",      icon: Upload },
+  { id: "timeline",    label: "Timeline",    icon: Clock },
+  { id: "leaderboard", label: "Leaderboard", icon: LayoutDashboard },
+  { id: "latency",     label: "Latency",     icon: Activity },
+  { id: "validation",  label: "Validation",  icon: ShieldCheck },
+  { id: "reports",     label: "Reports",     icon: FileText },
 ];
 
 interface SidebarProps {
-  activeSection: string;
-  onSectionChange: (section: string) => void;
+  active: SidebarSection;
+  onChange: (s: SidebarSection) => void;
 }
 
-export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-
-  if (pathname !== "/dashboard") return null;
-
+export function Sidebar({ active, onChange }: SidebarProps) {
   return (
-    <motion.aside
-      initial={{ x: -20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      className="fixed left-0 top-16 bottom-0 z-40 hidden lg:flex flex-col border-r border-[#1b2533] bg-[#080d13]/95 backdrop-blur-xl"
-      style={{ width: collapsed ? 68 : 224 }}
-    >
-      {!collapsed && (
-        <div className="border-b border-[#1b2533] px-4 py-4">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-            Operations
-          </div>
-        </div>
-      )}
-      <div className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
-        {sidebarLinks.map((link) => {
-          const isActive = activeSection === link.section;
-          return (
-            <button
-              key={link.section}
-              onClick={() => onSectionChange(link.section)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
-                isActive
-                  ? "text-uora-cyan bg-uora-cyan/10 shadow-[inset_3px_0_0_rgba(6,182,212,0.85),inset_0_0_0_1px_rgba(6,182,212,0.16)]"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-[#101722]"
-              )}
-            >
-              <link.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && (
-                <motion.span
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.05 }}
-                >
-                  {link.label}
-                </motion.span>
-              )}
-            </button>
-          );
-        })}
+    <aside className="fixed left-0 top-12 bottom-0 z-40 w-[200px] flex flex-col border-r border-[rgba(255,255,255,0.05)] bg-[rgba(3,9,15,0.98)]">
+      <div className="px-3 py-4">
+        <div className="label-mono mb-3 px-2">Operations</div>
+        <nav className="flex flex-col gap-0.5">
+          {LINKS.map((link) => {
+            const isActive = active === link.id;
+            return (
+              <button
+                key={link.id}
+                onClick={() => onChange(link.id)}
+                className={cn(
+                  "relative w-full flex items-center gap-2.5 px-3 py-2 rounded text-sm font-mono transition-all duration-150 text-left",
+                  isActive
+                    ? "text-[var(--plasma)] bg-[rgba(0,212,255,0.06)]"
+                    : "text-[var(--ink-400)] hover:text-[var(--ink-200)] hover:bg-[var(--void-700)]"
+                )}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="sidebar-indicator"
+                    className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-[var(--plasma)]"
+                    transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <link.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="text-xs font-medium">{link.label}</span>
+                {link.badge && (
+                  <span className="ml-auto text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(0,212,255,0.1)] text-[var(--plasma)] border border-[rgba(0,212,255,0.15)]">
+                    {link.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Collapse Toggle */}
-      <div className="p-2 border-t border-uora-border">
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-uora-elevated transition-colors"
-        >
-          {collapsed ? (
-            <ChevronRight className="w-4 h-4" />
-          ) : (
-            <ChevronLeft className="w-4 h-4" />
-          )}
-        </button>
+      {/* Bottom section */}
+      <div className="mt-auto p-3 border-t border-[rgba(255,255,255,0.04)]">
+        <div className="px-3 py-2 rounded bg-[var(--void-700)] border border-[rgba(0,212,255,0.07)]">
+          <div className="label-mono mb-1">Platform</div>
+          <div className="text-[10px] font-mono text-[var(--ink-500)]">UORA v2.0</div>
+          <div className="text-[10px] font-mono text-[var(--ink-500)]">IICPC 2026</div>
+        </div>
       </div>
-    </motion.aside>
+    </aside>
   );
 }
