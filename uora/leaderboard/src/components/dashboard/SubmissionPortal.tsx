@@ -291,10 +291,10 @@ export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
                     <Upload className="w-4 h-4 text-[var(--plasma)]" />
                   </div>
                   <div>
-                    <p className="text-sm text-[var(--ink-300)] font-mono">
+                    <p className="text-sm text-[var(--ink-100)] font-mono">
                       Drop your engine here
                     </p>
-                    <p className="text-[11px] text-[var(--ink-500)] mt-0.5">
+                    <p className="text-[11px] text-[var(--ink-400)] mt-0.5">
                       .cpp .rs .go .tar.gz .zip · Max 50 MB
                     </p>
                   </div>
