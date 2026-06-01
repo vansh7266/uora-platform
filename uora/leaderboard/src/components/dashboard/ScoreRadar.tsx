@@ -1,12 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
 import { Gauge } from "lucide-react";
-
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+import { Chart } from "@/components/ui/Chart";
 
 export function ScoreRadar() {
   const { entries } = useLeaderboardStore();
@@ -89,7 +87,7 @@ export function ScoreRadar() {
         <span className="text-[10px] font-mono text-[var(--ink-500)]">Top 3 engines</span>
       </PanelHeader>
       <div className="p-4">
-        <ReactECharts option={option} style={{ height: 280 }} notMerge={false} />
+        <Chart option={option} height={280} />
       </div>
     </GlassPanel>
   );

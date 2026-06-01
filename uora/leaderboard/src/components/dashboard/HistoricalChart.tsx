@@ -1,12 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { TrendingUp } from "lucide-react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
-
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+import { Chart } from "@/components/ui/Chart";
 
 // In a real system this would come from /api/v1/history; for now we synthesize
 // from the entries + submissions in the store for each team.
@@ -115,7 +113,7 @@ export function HistoricalChart() {
         <span className="text-[10px] font-mono text-[var(--ink-500)]">Score progression per team</span>
       </PanelHeader>
       <div className="p-4">
-        <ReactECharts option={option} style={{ height: 220 }} notMerge={false} />
+        <Chart option={option} height={220} />
       </div>
     </GlassPanel>
   );

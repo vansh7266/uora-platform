@@ -1,12 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
 import { BarChart2 } from "lucide-react";
-
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+import { Chart } from "@/components/ui/Chart";
 
 function buildHistogram(metrics: { p50: number; p90: number; p99: number }[]) {
   if (!metrics.length) return { buckets: [], counts: [] };
@@ -112,7 +110,7 @@ export function LatencyHistogram() {
         </span>
       </PanelHeader>
       <div className="p-4">
-        <ReactECharts option={option} style={{ height: 180 }} notMerge={false} />
+        <Chart option={option} height={180} />
       </div>
       <div className="px-5 pb-4 flex items-center gap-4 text-[10px] font-mono text-[var(--ink-500)]">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-[var(--plasma)]" />Normal</span>

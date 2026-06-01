@@ -1,13 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { Activity } from "lucide-react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
 import { MetricKPI } from "@/components/ui/MetricKPI";
-
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+import { Chart } from "@/components/ui/Chart";
 
 const PLASMA = "#00D4FF";
 const BID    = "#16C784";
@@ -101,7 +99,7 @@ function LatencyLineChart() {
     );
   }
 
-  return <ReactECharts option={option} style={{ height: 200 }} notMerge={false} />;
+  return <Chart option={option} height={200} />;
 }
 
 function ThroughputChart() {
@@ -164,7 +162,7 @@ function ThroughputChart() {
     );
   }
 
-  return <ReactECharts option={option} style={{ height: 160 }} notMerge={false} />;
+  return <Chart option={option} height={160} />;
 }
 
 export function LatencyPanel() {
