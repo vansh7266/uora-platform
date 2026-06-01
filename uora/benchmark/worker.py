@@ -252,6 +252,145 @@ class BenchmarkWorker:
             logger.warning("Feature extraction failed for %s: %s", submission_id, exc)
             return None
 
+    # ── Resource metering helpers ─────────────────────────────────────────
+
+    @staticmethod
+    def _container_name_from_url(target_url: str) -> Optional[str]:
+        """Extract the container/pod name from the target URL.
+
+        Docker  → ``http://sub-{name}:8080``                 → ``sub-{name}``
+        K8s     → ``http://sub-{name}.ns.svc.cluster.local`` → ``sub-{name}``
+        """
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(target_url).hostname or ""
+            label = host.split(".")[0]
+            return label or None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _compute_resource_penalty(cpu_pct: float, mem_mib: float) -> float:
+        """Map average container CPU+memory usage to a penalty multiplier ≥ 1.0.
+
+        CPU (% of one core):
+            0 – 50%   → no penalty
+            50 – 100% → linear 0 → +0.5
+            > 100%    → +0.5 per additional core (throttled engines penalised harder)
+
+        Memory (MiB):
+            0 – 256   → no penalty
+            256 – 512 → linear 0 → +0.5
+
+        The denominator in compute_composite_score is ``p99_ms + penalty²``, so
+        a penalty of 2.0 adds 4× as much drag as the 1.0 baseline — a convex
+        disincentive for bloated engines.
+        """
+        # CPU
+        if cpu_pct <= 50.0:
+            cpu_extra = 0.0
+        elif cpu_pct <= 100.0:
+            cpu_extra = (cpu_pct - 50.0) / 50.0 * 0.5
+        else:
+            cpu_extra = 0.5 + min(0.5, (cpu_pct - 100.0) / 100.0 * 0.5)
+
+        # Memory
+        MEM_THRESHOLD = 256.0
+        MEM_LIMIT = 512.0
+        if mem_mib <= MEM_THRESHOLD:
+            mem_extra = 0.0
+        else:
+            mem_extra = min(0.5, (mem_mib - MEM_THRESHOLD) / (MEM_LIMIT - MEM_THRESHOLD) * 0.5)
+
+        return round(1.0 + cpu_extra + mem_extra, 4)
+
+    @staticmethod
+    def _parse_mem_mib(mem_str: str) -> Optional[float]:
+        """Parse a Docker memory string (e.g. ``256MiB``, ``1.5GiB``, ``512MB``) → MiB."""
+        mem_str = mem_str.strip()
+        try:
+            for unit, factor in [
+                ("GiB", 1024.0), ("MiB", 1.0), ("KiB", 1.0 / 1024.0),
+                ("GB",  953.674), ("MB",  0.953674), ("KB", 0.000953674),
+            ]:
+                if mem_str.endswith(unit):
+                    return float(mem_str[: -len(unit)]) * factor
+            return float(mem_str)  # bare number → assume MiB
+        except (ValueError, TypeError):
+            return None
+
+    async def _sample_container_resources(
+        self,
+        submission_id: str,
+        target_url: str,
+        duration: float,
+        n_samples: int = 5,
+    ) -> float:
+        """Sample Docker CPU + memory during the benchmark window and return a
+        ``resource_penalty`` ≥ 1.0.
+
+        Runs ``docker stats --no-stream`` at evenly-spaced intervals while the
+        benchmark is executing.  Falls back to 1.0 on any error (Docker not
+        available, Kubernetes deployment, permission issues, etc.).
+        """
+        container = self._container_name_from_url(target_url)
+        if not container:
+            logger.debug("Cannot derive container name from %s — skipping resource sampling", target_url)
+            return 1.0
+
+        interval = max(1.0, duration / max(n_samples, 1))
+        cpu_readings: list[float] = []
+        mem_readings: list[float] = []
+
+        for _ in range(n_samples):
+            await asyncio.sleep(interval)
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "docker", "stats", "--no-stream",
+                    "--format", "{{.CPUPerc}}\t{{.MemUsage}}",
+                    container,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                try:
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    await proc.wait()
+                    continue
+
+                line = stdout.decode(errors="replace").strip()
+                if not line:
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 2:
+                    continue
+
+                cpu_pct = float(parts[0].strip().rstrip("%"))
+                mem_mib = self._parse_mem_mib(parts[1].split("/")[0].strip())
+                cpu_readings.append(cpu_pct)
+                if mem_mib is not None:
+                    mem_readings.append(mem_mib)
+
+            except Exception as exc:
+                logger.debug("Resource sample failed for %s: %s", container, exc)
+
+        if not cpu_readings:
+            logger.debug("No CPU samples collected for %s — using 1.0 baseline", submission_id)
+            return 1.0
+
+        avg_cpu = sum(cpu_readings) / len(cpu_readings)
+        avg_mem = sum(mem_readings) / len(mem_readings) if mem_readings else 0.0
+        penalty = self._compute_resource_penalty(avg_cpu, avg_mem)
+        logger.info(
+            "Resource metering for %s: cpu=%.1f%% mem=%.1f MiB → penalty=%.4f",
+            submission_id, avg_cpu, avg_mem, penalty,
+        )
+        return penalty
+
     async def _read_resource_penalty(self, submission_id: str) -> Optional[float]:
         """Read the resource penalty the pipeline recorded in Redis (resources:{id})."""
         try:
@@ -273,6 +412,16 @@ class BenchmarkWorker:
             await self._update_status(submission_id, "benchmarking", target_url=target_url)
             actions = load_actions()
             coordinator = BotCoordinator()
+
+            # Start container resource sampling concurrently with the benchmark.
+            # The task runs for exactly DURATION_SEC seconds and is awaited after
+            # the benchmark completes, so we get real CPU/memory readings.
+            resource_task: asyncio.Task[float] = asyncio.create_task(
+                self._sample_container_resources(
+                    submission_id, target_url, float(DURATION_SEC)
+                )
+            )
+
             try:
                 await coordinator.start(
                     target_url,
@@ -285,6 +434,27 @@ class BenchmarkWorker:
                 results = await coordinator.get_results()
             finally:
                 await coordinator.stop()
+
+            # Collect the resource penalty that was sampled during the run.
+            try:
+                resource_penalty_live = await asyncio.wait_for(resource_task, timeout=30.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as exc:
+                logger.warning("Resource sampling timed out for %s: %s", submission_id, exc)
+                resource_task.cancel()
+                resource_penalty_live = None
+
+            # Write the live penalty to Redis, overwriting the 1.0 baseline the
+            # builder wrote at deploy time.  _read_resource_penalty() reads this.
+            if self._redis is not None and resource_penalty_live is not None:
+                await self._redis.set(
+                    f"resources:{submission_id}",
+                    str(resource_penalty_live),
+                    ex=86400,
+                )
+                logger.info(
+                    "Wrote resource_penalty=%.4f for %s",
+                    resource_penalty_live, submission_id,
+                )
 
             assert_benchmark_succeeded(results, minimum_success_rate=MIN_SUCCESS_RATE)
             await self._record_latency_events(submission_id, results["results"])
