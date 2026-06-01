@@ -1,7 +1,11 @@
 """
 UORA Scoring Engine
 Reads TimescaleDB aggregates → computes composite score.
-Formula: (Throughput × Correctness_Rate) / (p99_Latency + Resource_Usage²)
+
+Formula: (throughput × correctness_rate × success_rate)
+         / (p99_latency_ms + resource_penalty²)      [denominator floored at 1.0]
+
+See compute_composite_score() for the authoritative, unit-tested implementation.
 """
 
 from __future__ import annotations
@@ -36,6 +40,34 @@ def require_setting(name: str, value: str | None) -> str:
 def _p99_to_p50_ratio(p99_latency: float, p50_latency: float | None) -> float:
     """Return the tail-latency ratio for values already expressed in ns."""
     return (p99_latency / p50_latency) if p50_latency and p50_latency > 0 else 1.0
+
+
+def compute_composite_score(
+    throughput: float,
+    correctness_rate: float,
+    success_rate: float,
+    p99_latency_ns: float,
+    resource_penalty: float = 1.0,
+) -> float:
+    """Composite leaderboard score — the single number engines are ranked by.
+
+        score = (throughput × correctness_rate × success_rate)
+                ───────────────────────────────────────────────
+                (p99_latency_ms + resource_penalty²)        ⌊ denominator floored at 1.0 ⌋
+
+    Design intent (see docs/quant/module-09-scoring.md):
+      * ``correctness_rate`` and ``success_rate`` are *multiplicative gates* — a 50%-correct
+        engine has its whole score halved, not merely docked.
+      * ``p99`` tail latency is an *additive* penalty (lower is better).
+      * ``resource_penalty`` is *squared* so waste is punished convexly.
+      * the denominator is floored at 1.0 so a sub-millisecond engine can't score infinitely.
+
+    Pure function (no I/O) so it is trivially unit-testable and deterministic.
+    """
+    numerator = float(throughput) * float(correctness_rate) * float(success_rate)
+    p99_latency_ms = float(p99_latency_ns) / 1_000_000
+    denominator = p99_latency_ms + (float(resource_penalty) ** 2)
+    return numerator / max(denominator, 1.0)
 
 
 def _nearest_rank_percentile(sorted_values: list[int], percentile: float) -> int:
@@ -141,9 +173,25 @@ class ScoringEngine:
         if _pool is None:
             await startup(**self._db_config)
 
-    async def compute_score(self, submission_id: str) -> dict:
+    async def compute_score(
+        self,
+        submission_id: str,
+        *,
+        features: Any | None = None,
+        resource_penalty: float | None = None,
+    ) -> dict:
         """
         Compute composite score for a submission.
+
+        Args:
+            submission_id: the submission to score.
+            features: a precomputed ``BenchmarkFeatures`` vector from the benchmark worker,
+                which has the action/response data needed to compute ``pattern_correlation``
+                and ``state_transition_ged``. When omitted, a latency-only vector is derived
+                (those two features fall back to 0.0).
+            resource_penalty: runtime resource cost reported by the pipeline (the builder /
+                benchmarker write ``resources:{id}`` to Redis). Defaults to a 1.0 baseline.
+
         Returns: score dict with all metrics.
         """
         await self._ensure_pool()
@@ -192,15 +240,18 @@ class ScoringEngine:
             # Fetch correctness rate from validator results
             correctness_rate = await self._get_correctness_rate(conn, submission_id)
 
-            # Default runtime cost until cgroup/container metrics are attached.
-            resource_penalty = 1.0
+            # Resource penalty consumed from the pipeline (builder/benchmarker write
+            # resources:{id} to Redis and pass it in here); fall back to a 1.0 baseline.
+            resource_penalty = 1.0 if resource_penalty is None else float(resource_penalty)
 
-            # Composite score
-            # Higher = better. Penalizes high latency and resource usage.
-            numerator = avg_throughput * correctness_rate * float(summary["success_rate"])
-            denominator = (p99_latency / 1_000_000) + (resource_penalty ** 2)  # Convert ns to ms
-
-            composite_score = numerator / max(denominator, 1.0)
+            # Composite score — authoritative formula in compute_composite_score() (unit-tested).
+            composite_score = compute_composite_score(
+                throughput=avg_throughput,
+                correctness_rate=correctness_rate,
+                success_rate=float(summary["success_rate"]),
+                p99_latency_ns=p99_latency,
+                resource_penalty=resource_penalty,
+            )
 
             # ─── ML Anomaly Detection ──────────────────────────────────────────
             anomaly_score = 0.0
@@ -212,21 +263,24 @@ class ScoringEngine:
                 detector = MLAnomalyDetector()
                 detector.fit()
 
-                # Fetch raw latencies for feature extraction
-                raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
-                throughput_values = [float(summary["throughput"])]
-
-                features = BenchmarkFeatures(
-                    submission_id=submission_id,
-                    latency_entropy=float(np.std(np.array(raw_latencies, dtype=np.float64))) if raw_latencies else 0.0,
-                    pattern_correlation=0.0,
-                    volume_conservation_delta=0.0,
-                    state_transition_ged=0.0,
-                    latency_trend_slope=0.0,
-                    throughput_variance=float(np.var(np.array(throughput_values, dtype=np.float64))),
-                    error_rate=float(summary["error_rate"]),
-                    p99_to_p50_ratio=_p99_to_p50_ratio(p99_latency, p50_latency),
-                )
+                if features is None:
+                    # No precomputed vector supplied: derive what we can from latency
+                    # telemetry alone. pattern_correlation and state_transition_ged need
+                    # the full action/response stream (available in the benchmark worker),
+                    # so they stay 0.0 only in this fallback path.
+                    raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
+                    throughput_values = [float(summary["throughput"])]
+                    features = BenchmarkFeatures(
+                        submission_id=submission_id,
+                        latency_entropy=float(np.std(np.array(raw_latencies, dtype=np.float64))) if raw_latencies else 0.0,
+                        pattern_correlation=0.0,
+                        volume_conservation_delta=0.0,
+                        state_transition_ged=0.0,
+                        latency_trend_slope=0.0,
+                        throughput_variance=float(np.var(np.array(throughput_values, dtype=np.float64))),
+                        error_rate=float(summary["error_rate"]),
+                        p99_to_p50_ratio=_p99_to_p50_ratio(p99_latency, p50_latency),
+                    )
                 result = detector.detect(features)
                 anomaly_score = result.anomaly_score
                 anomaly_reason = result.reason
@@ -268,7 +322,7 @@ class ScoringEngine:
                     "reason": anomaly_reason,
                 },
                 "resource_penalty": resource_penalty,
-                "formula": "(throughput × correctness) / (p99_latency_ms + resource²)",
+                "formula": "(throughput × correctness × success_rate) / (p99_latency_ms + resource_penalty²)",
             }
 
             await conn.execute(

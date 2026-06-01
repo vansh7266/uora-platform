@@ -221,6 +221,48 @@ class BenchmarkWorker:
                     ],
                 )
 
+    @staticmethod
+    def _build_features(
+        submission_id: str,
+        results: dict[str, Any],
+        attempted_actions: list[dict[str, Any]],
+        contestant_responses: list[dict[str, Any]],
+    ) -> Optional[Any]:
+        """Extract the 8-feature anomaly vector from a completed benchmark run.
+
+        Done in the worker because pattern_correlation and state_transition_ged need the
+        full action/response stream, which the scoring engine (DB-only) does not have.
+        Best-effort: returns None on failure so scoring falls back to latency-only features.
+        """
+        try:
+            from uora.ml_detector.detector import MLAnomalyDetector
+
+            latencies = [int(r.get("latency_ns", 0) or 0) for r in results.get("results", [])]
+            total = int(results.get("total_orders", len(latencies)) or len(latencies) or 1)
+            errors = int(results.get("failed_orders", 0) or 0)
+            return MLAnomalyDetector.extract_features(
+                submission_id=submission_id,
+                latencies=latencies or [1_000_000],
+                expected_actions=attempted_actions,
+                actual_actions=contestant_responses,
+                errors=errors,
+                total=total,
+            )
+        except Exception as exc:
+            logger.warning("Feature extraction failed for %s: %s", submission_id, exc)
+            return None
+
+    async def _read_resource_penalty(self, submission_id: str) -> Optional[float]:
+        """Read the resource penalty the pipeline recorded in Redis (resources:{id})."""
+        try:
+            if self._redis is None:
+                return None
+            raw = await self._redis.get(f"resources:{submission_id}")
+            return float(raw) if raw is not None else None
+        except Exception as exc:
+            logger.warning("Resource penalty lookup failed for %s: %s", submission_id, exc)
+            return None
+
     async def _run_job(self, job: dict[str, Any]) -> None:
         submission_id = job["submission_id"]
         target_url = job["target_url"]
@@ -262,7 +304,21 @@ class BenchmarkWorker:
                 db_password=DB_PASSWORD,
                 db_name=DB_NAME,
             )
-            score = await engine.compute_score(submission_id)
+
+            # Build the full 8-feature anomaly vector HERE, where the action/response
+            # stream lives, so pattern_correlation and state_transition_ged are computed
+            # for real instead of being passed to the scorer as 0.0.
+            features = self._build_features(
+                submission_id, results, attempted_actions, contestant_responses
+            )
+            # Resource penalty reported by the pipeline (the builder writes resources:{id}).
+            resource_penalty = await self._read_resource_penalty(submission_id)
+
+            score = await engine.compute_score(
+                submission_id,
+                features=features,
+                resource_penalty=resource_penalty,
+            )
 
             await self._update_status(submission_id, "scored", language=language)
             leaderboard = await engine.get_leaderboard(limit=20)

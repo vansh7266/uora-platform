@@ -251,11 +251,16 @@ class MLAnomalyDetector:
         # 3. Volume conservation (simplified)
         volume_conservation_delta = abs(len(expected_actions) - len(actual_actions))
 
-        # 4. State transition GED — real Graph Edit Distance via NetworkX
+        # 4. State transition distance — normalized graph dissimilarity in [0, 1].
+        #    _ged_normalized() returns SIMILARITY (1.0 = identical graphs), but this feature
+        #    and the detection rules treat state_transition_ged as a DISTANCE (higher = more
+        #    divergent / less deterministic — see the > 0.5 rule and the test profiles). So we
+        #    invert: 0.0 = identical/deterministic, 1.0 = fully diverged. Without this, a
+        #    perfectly deterministic engine (similarity 1.0) would be flagged as anomalous.
         from uora.validator.diff_engine import _build_state_graph, _ged_normalized
         ref_graph = _build_state_graph(expected_actions)
         con_graph = _build_state_graph(actual_actions)
-        state_transition_ged = _ged_normalized(ref_graph, con_graph)
+        state_transition_ged = 1.0 - _ged_normalized(ref_graph, con_graph)
 
         # 5. Latency trend slope (linear regression on time series)
         if len(latencies) >= 2:
