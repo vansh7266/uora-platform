@@ -181,54 +181,44 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Panels */}
-          <AnimatePresence mode="wait">
-            {section === "submit" && (
-              <motion.div key="submit" {...panelMotion}>
+          {/* Panels — a keyed motion.div remounts and fades in on each section change.
+              Deliberately NOT wrapped in AnimatePresence mode="wait": the exit-gating could
+              stall the enter and leave a panel stuck at opacity 0 when background timers
+              (TopBar tick, BuildLog) re-render the parent. Visibility must never depend on
+              an animation completing. */}
+          <motion.div key={section} {...panelMotion}>
+              {section === "submit" && (
                 <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-4">
                   <SubmissionPortal isDemo={isDemo} />
                   <div className="space-y-4">
                     <BuildLog isDemo={isDemo} />
                   </div>
                 </div>
-              </motion.div>
-            )}
+              )}
 
-            {section === "timeline" && (
-              <motion.div key="timeline" {...panelMotion}>
-                <TimelinePanel />
-              </motion.div>
-            )}
+              {section === "timeline" && <TimelinePanel />}
 
-            {section === "leaderboard" && (
-              <motion.div key="leaderboard" {...panelMotion} className="space-y-4">
-                <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
-                  <LeaderboardPanel />
-                  <ScoreRadar />
+              {section === "leaderboard" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
+                    <LeaderboardPanel />
+                    <ScoreRadar />
+                  </div>
+                  <HistoricalChart />
                 </div>
-                <HistoricalChart />
-              </motion.div>
-            )}
+              )}
 
-            {section === "latency" && (
-              <motion.div key="latency" {...panelMotion} className="space-y-4">
-                <LatencyPanel />
-                <LatencyHistogram />
-              </motion.div>
-            )}
+              {section === "latency" && (
+                <div className="space-y-4">
+                  <LatencyPanel />
+                  <LatencyHistogram />
+                </div>
+              )}
 
-            {section === "validation" && (
-              <motion.div key="validation" {...panelMotion}>
-                <ValidationPanel />
-              </motion.div>
-            )}
+              {section === "validation" && <ValidationPanel />}
 
-            {section === "reports" && (
-              <motion.div key="reports" {...panelMotion}>
-                <ReportsPanel />
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {section === "reports" && <ReportsPanel />}
+          </motion.div>
         </div>
       </main>
     </div>
