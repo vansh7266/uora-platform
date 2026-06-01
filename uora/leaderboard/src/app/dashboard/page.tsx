@@ -136,7 +136,7 @@ export default function DashboardPage() {
       {/* Main content */}
       <main
         className="min-h-screen pt-12 pl-[200px]"
-        style={{ paddingTop: isDemo && !demoBannerDismissed ? "64px" : "48px" }}
+        style={{ paddingTop: isDemo && !demoBannerDismissed ? "84px" : "48px" }}
       >
         <div className="p-5 max-w-[1440px]">
           {/* KPI strip */}
