@@ -9,7 +9,7 @@ import { Logo } from "@/components/ui/Logo";
 import { StatusDot } from "@/components/ui/StatusDot";
 
 export function TopBar() {
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, isDemo, logout } = useAuthStore();
   const { connected, lastUpdated } = useLeaderboardStore();
 
   return (
@@ -24,8 +24,8 @@ export function TopBar() {
         {/* Status indicators */}
         <div className="flex items-center gap-4">
           <StatusDot
-            status={connected ? "live" : "offline"}
-            label={connected ? "SSE LIVE" : "OFFLINE"}
+            status={isDemo ? "warning" : connected ? "live" : "offline"}
+            label={isDemo ? "SIMULATED" : connected ? "SSE LIVE" : "OFFLINE"}
           />
           {lastUpdated && (
             <span className="hidden sm:block text-[10px] font-mono text-[var(--ink-500)]">
