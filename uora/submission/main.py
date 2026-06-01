@@ -1,11 +1,11 @@
-import json
-import time
 """
-UORA Submission Service -- Production Hardened
-Handles: file upload -> virus scan -> MinIO storage -> build queue
-Auth: Google OAuth2 + API token, rate limiting, session management
+UORA Submission Service — Production Hardened
+Handles: file upload → MinIO storage → build queue.
+Auth: Google OAuth2 + API token, rate limiting, JWT session management.
 """
 
+import json
+import time
 import os
 import uuid
 import logging
