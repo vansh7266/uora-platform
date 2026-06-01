@@ -32,13 +32,6 @@ import {
   Loader2,
 } from "lucide-react";
 
-const panelMotion = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit:    { opacity: 0, y: -8 },
-  transition: { duration: 0.22, ease: "easeOut" as const },
-};
-
 export default function DashboardPage() {
   const router = useRouter();
   const [section, setSection] = useState<SidebarSection>("submit");
@@ -50,6 +43,14 @@ export default function DashboardPage() {
 
   // SSE for real users
   useSSE(isDemo ? "" : "/api/leaderboard");
+
+  // ECharts inside a freshly-switched panel can initialize at 0px width before the
+  // section's layout settles, leaving a blank chart (ECharts only auto-resizes on a
+  // window resize). Nudge every mounted chart to re-measure once the panel has painted.
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event("resize")), 120);
+    return () => clearTimeout(t);
+  }, [section]);
 
   // Seed demo data
   useEffect(() => {
@@ -181,12 +182,11 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Panels — a keyed motion.div remounts and fades in on each section change.
-              Deliberately NOT wrapped in AnimatePresence mode="wait": the exit-gating could
-              stall the enter and leave a panel stuck at opacity 0 when background timers
-              (TopBar tick, BuildLog) re-render the parent. Visibility must never depend on
-              an animation completing. */}
-          <motion.div key={section} {...panelMotion}>
+          {/* Panels — a plain keyed div remounts the active panel on section change.
+              No entrance animation on purpose: an animating/transformed wrapper made ECharts
+              measure 0/partial width at init (blank or squished charts) and could leave
+              content stuck at opacity 0. Stable, instant layout beats a 0.2s fade. */}
+          <div key={section}>
               {section === "submit" && (
                 <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-4">
                   <SubmissionPortal isDemo={isDemo} />
@@ -218,7 +218,7 @@ export default function DashboardPage() {
               {section === "validation" && <ValidationPanel />}
 
               {section === "reports" && <ReportsPanel />}
-          </motion.div>
+          </div>
         </div>
       </main>
     </div>

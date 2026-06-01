@@ -1,13 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useMemo, useEffect, useState } from "react";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
 import { Badge } from "@/components/ui/Badge";
-
-const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
+import { Chart } from "@/components/ui/Chart";
 
 // ── Simulated live orderbook depth ────────────────────────────────────────────
 
@@ -107,7 +105,7 @@ function OrderbookDepthChart() {
     ],
   }), [bids, asks, allPrices, maxCum]);
 
-  return <ReactECharts option={option} style={{ height: 200 }} notMerge={false} />;
+  return <Chart option={option} height={200} />;
 }
 
 // ── Anomaly feed ──────────────────────────────────────────────────────────────
