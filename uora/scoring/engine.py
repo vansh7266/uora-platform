@@ -254,6 +254,10 @@ class ScoringEngine:
             )
 
             # ─── ML Anomaly Detection ──────────────────────────────────────────
+            # Compute raw_latencies here so the PDF report generator can always
+            # reference it regardless of whether features were pre-computed.
+            raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
+
             anomaly_score = 0.0
             anomaly_reason = "Not analyzed"
             anomaly_is_anomaly = False
@@ -268,7 +272,6 @@ class ScoringEngine:
                     # telemetry alone. pattern_correlation and state_transition_ged need
                     # the full action/response stream (available in the benchmark worker),
                     # so they stay 0.0 only in this fallback path.
-                    raw_latencies = [int(r["latency_ns"]) for r in latency_rows] if latency_rows else [1_000_000]
                     throughput_values = [float(summary["throughput"])]
                     features = BenchmarkFeatures(
                         submission_id=submission_id,
