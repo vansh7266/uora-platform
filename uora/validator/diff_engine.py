@@ -62,7 +62,8 @@ def _build_state_graph(responses: list[dict]) -> nx.DiGraph:
     g = nx.DiGraph()
     for i, resp in enumerate(responses):
         order_id = resp.get("order_id", f"order-{i}")
-        status = resp.get("status", "unknown")
+        # Normalise so public-API "accepted" and internal "pending" are the same node.
+        status = _normalize_status(resp.get("status", "unknown"))
         node_label = f"{order_id}:{status}"
         g.add_node(node_label, order_id=order_id, status=status)
 
@@ -87,8 +88,14 @@ def _ged_normalized(ref_graph: nx.DiGraph, contestant_graph: nx.DiGraph) -> floa
         1.0 = perfect match (GED = 0)
         0.0 = completely different
 
-    Computes structural similarity between two order graphs.
-    Replaces exact GED with SequenceMatcher for O(N^2) instead of NP-Hard timeouts.
+    Combines two signals:
+      * Node similarity (60 %) — captures order_id:status divergence even when
+        each order appears only once (no repeated order_id → no edges).  This
+        is the primary signal in the typical single-action-per-order scenario.
+      * Edge similarity (40 %) — captures wrong state-transition sequences when
+        an order appears in multiple actions (submit + cancel, etc.).
+
+    Replaces exact GED with SequenceMatcher for O(N²) instead of NP-Hard.
     """
     n_ref = ref_graph.number_of_nodes()
     n_con = contestant_graph.number_of_nodes()
@@ -99,12 +106,22 @@ def _ged_normalized(ref_graph: nx.DiGraph, contestant_graph: nx.DiGraph) -> floa
     if n_ref == 0 or n_con == 0:
         return 0.0
 
-    # Serialize graphs into deterministic edge sequences
-    ref_seq = sorted(f"{u}->{v}" for u, v in ref_graph.edges())
-    con_seq = sorted(f"{u}->{v}" for u, v in contestant_graph.edges())
+    # Node similarity — primary signal.
+    # Each node label is "order_id:status", so a wrong status means a different node.
+    ref_nodes = sorted(ref_graph.nodes())
+    con_nodes = sorted(contestant_graph.nodes())
+    node_sim = difflib.SequenceMatcher(None, ref_nodes, con_nodes).ratio()
 
-    sm = difflib.SequenceMatcher(None, ref_seq, con_seq)
-    return sm.ratio()
+    # Edge similarity — catches wrong state-transition paths.
+    ref_edges = sorted(f"{u}->{v}" for u, v in ref_graph.edges())
+    con_edges = sorted(f"{u}->{v}" for u, v in contestant_graph.edges())
+    edge_sim = (
+        difflib.SequenceMatcher(None, ref_edges, con_edges).ratio()
+        if (ref_edges or con_edges)
+        else 1.0  # neither graph has edges → neither can diverge on transitions
+    )
+
+    return 0.6 * node_sim + 0.4 * edge_sim
 
 
 class CorrectnessValidator:
@@ -166,12 +183,23 @@ class CorrectnessValidator:
         ):
             self._validate_action(action, contestant_resp, ref_state, i)
 
-        # Check market invariants on final state
-        self._check_market_invariants()
+        # L3: Check market invariants on the contestant's implied book.
+        # (Reference LOB is always valid — checking it never fires.)
+        self._check_market_invariants(actions, contestant_responses)
 
         # L4: State Graph / Determinism Check
+        # Annotate contestant responses with order_ids from the action list so
+        # the graph builder produces meaningful node labels ("S1:filled" instead
+        # of "order-1:filled") and can create cross-action transition edges when
+        # the same order appears in multiple actions (e.g. submit then cancel).
+        annotated_contestant: list[dict] = [
+            {"order_id": action.get("order_id", f"order-{i}"), **resp}
+            for i, (action, resp) in enumerate(
+                zip(actions, contestant_responses[: len(actions)])
+            )
+        ]
         ref_graph = _build_state_graph(reference_states)
-        con_graph = _build_state_graph(contestant_responses)
+        con_graph = _build_state_graph(annotated_contestant)
         similarity = _ged_normalized(ref_graph, con_graph)
         
         if similarity < 1.0:
@@ -216,6 +244,7 @@ class CorrectnessValidator:
             )
             fills, updated = self.reference_book.submit_order(order)
             return {
+                "order_id": order_id,   # needed by L4 graph builder
                 "type": action_type,
                 "fills": [
                     {
@@ -234,7 +263,12 @@ class CorrectnessValidator:
 
         elif action_type == "cancel":
             success, order = self.reference_book.cancel_order(action["order_id"])
-            return {"type": "cancel", "success": success, "status": order.status if order else "not_found"}
+            return {
+                "order_id": action["order_id"],  # needed by L4 graph builder
+                "type": "cancel",
+                "success": success,
+                "status": order.status if order else "not_found",
+            }
 
         else:
             return {"type": "unknown", "error": f"Unknown action type: {action_type}"}
@@ -295,16 +329,12 @@ class CorrectnessValidator:
                         description="Fill quantity mismatch",
                     ))
 
-        # L2: State machine validation
+        # L2: State machine validation — compare normalised status against reference.
+        # Per-order transition-path checking (pending→partial_fill→filled) would need
+        # the full event stream, not just per-action responses; the L4 graph check covers
+        # that with the annotated contestant graph built in validate_submission.
         contestant_status = contestant_resp.get("status", "unknown")
         reference_status = ref_state.get("status", "unknown")
-
-        valid_transitions = {
-            "pending": ["partial_fill", "filled", "cancelled"],
-            "partial_fill": ["filled", "cancelled"],
-            "filled": [],
-            "cancelled": [],
-        }
 
         if _normalize_status(contestant_status) != _normalize_status(reference_status):
             self.violations.append(Violation(
@@ -337,24 +367,75 @@ class CorrectnessValidator:
                 description=f"Cancel response mismatch: expected {reference_status}, got {contestant_status}",
             ))
 
-    def _check_market_invariants(self) -> None:
-        """L3: Check market invariants on final state."""
-        state = self.reference_book.get_orderbook_state(depth=1)
+    def _check_market_invariants(
+        self,
+        actions: list[dict],
+        contestant_responses: list[dict],
+    ) -> None:
+        """L3: Check market invariants on the contestant's implied order book.
 
-        best_bid = state["bids"][0]["price"] if state["bids"] else None
-        best_ask = state["asks"][0]["price"] if state["asks"] else None
+        The reference LOB is always valid by construction, so checking it would
+        never fire.  Instead, we reconstruct the contestant's *implied* open-order
+        book from the reported statuses and check for a crossed market.
 
-        if best_bid and best_ask:
-            bid_price = float(best_bid)
-            ask_price = float(best_ask)
-            if bid_price >= ask_price:
-                self.violations.append(Violation(
-                    level=3,
-                    order_id="market",
-                    expected=f"bid < ask ({bid_price} < {ask_price})",
-                    actual=f"bid >= ask ({bid_price} >= {ask_price})",
-                    description="Market invariant violated: bid-ask spread non-negative",
-                ))
+        A crossed market occurs when the contestant reports a pending buy order at
+        price P_bid and a pending sell order at price P_ask with P_bid >= P_ask —
+        meaning the engine should have matched them but didn't.
+        """
+        # ── Reconstruct contestant's implied open orders ─────────────────────
+        # For each action, track the last known {status, price, side} per order_id.
+        order_book: dict[str, dict] = {}
+
+        for action, resp in zip(actions, contestant_responses[: len(actions)]):
+            action_type = action.get("type", "").lower()
+
+            if action_type in ("limit", "market", "ioc", "fok"):
+                order_id = action.get("order_id")
+                price = action.get("price")
+                side = action.get("side", "").lower()
+                status = _normalize_status(resp.get("status", "unknown"))
+                if order_id and price is not None:
+                    order_book[order_id] = {
+                        "status": status,
+                        "price": float(price),
+                        "side": side,
+                    }
+
+            elif action_type == "cancel":
+                cancel_id = action.get("order_id")
+                if cancel_id and cancel_id in order_book:
+                    order_book[cancel_id]["status"] = _normalize_status(
+                        resp.get("status", "unknown")
+                    )
+
+        # ── Check for crossed contestant book ────────────────────────────────
+        open_bids = [
+            v["price"]
+            for v in order_book.values()
+            if v["status"] in ("pending", "partial_fill") and v["side"] == "buy"
+        ]
+        open_asks = [
+            v["price"]
+            for v in order_book.values()
+            if v["status"] in ("pending", "partial_fill") and v["side"] == "sell"
+        ]
+
+        if open_bids and open_asks:
+            best_bid = max(open_bids)
+            best_ask = min(open_asks)
+            if best_bid >= best_ask:
+                self.violations.append(
+                    Violation(
+                        level=3,
+                        order_id="contestant",
+                        expected=f"best_bid({best_bid:.4f}) < best_ask({best_ask:.4f})",
+                        actual=f"best_bid({best_bid:.4f}) >= best_ask({best_ask:.4f})",
+                        description=(
+                            f"L3: Contestant book crossed — bid {best_bid:.4f} >= ask {best_ask:.4f}. "
+                            "Matching engine failed to execute a valid aggressor order."
+                        ),
+                    )
+                )
 
     def _count_by_level(self) -> dict[int, int]:
         """Count violations by level."""
