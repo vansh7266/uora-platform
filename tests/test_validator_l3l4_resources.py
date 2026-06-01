@@ -225,3 +225,70 @@ def test_container_name_none_for_ip():
     name = BenchmarkWorker._container_name_from_url("http://127.0.0.1:8080")
     # "127" isn't useful but the function shouldn't crash
     assert name is not None  # returns "127" — at least no exception
+
+
+# ─── Regression: string-price actions must not break LOB matching ─────────────
+
+
+def test_string_prices_in_actions_produce_correct_fills():
+    """
+    Regression for a real production bug: actions from the bot fleet carry prices
+    as JSON strings (e.g. "100.00"), not floats.  Before the fix, the reference
+    LOB stored string dict keys, string comparisons like "100.00" < "99.00" were
+    True (lexicographic), and the sell@99 never crossed the resting buy@100.
+    Result: reference always reported 0 fills, so every correct contestant got
+    spurious L1/L2 violations.
+    """
+    actions = [
+        # Prices are STRINGS — exactly as the bot fleet sends them
+        {"order_id": "B1", "side": "buy",  "type": "limit", "price": "100.00", "quantity": 50, "timestamp": 1},
+        {"order_id": "S1", "side": "sell", "type": "limit", "price": "99.00",  "quantity": 30, "timestamp": 2},
+    ]
+    # Correct contestant: B1 rests (pending), S1 fills against B1 at resting price 100.00
+    correct = [
+        {"order_id": "B1", "status": "pending", "filled_qty": 0,  "remaining_qty": 50, "fills": []},
+        {"order_id": "S1", "status": "filled",  "filled_qty": 30, "remaining_qty": 0,
+         "fills": [{"fill_id": "f1", "resting_order_id": "B1", "price": "100.00", "quantity": 30, "timestamp": 2}]},
+    ]
+    report = _validator_report(actions, correct)
+    assert report["violations_count"] == 0, (
+        f"Correct contestant got {report['violations_count']} violations — "
+        f"string-price bug likely: {[v['description'] for v in report['violations']]}"
+    )
+    assert report["correctness_rate"] == 1.0
+
+
+def test_wrong_contestant_with_string_prices_gets_violations():
+    """Contestant that misses the cross should get L1+L2+L3+L4 violations even with string prices."""
+    actions = [
+        {"order_id": "B1", "side": "buy",  "type": "limit", "price": "100.00", "quantity": 50, "timestamp": 1},
+        {"order_id": "S1", "side": "sell", "type": "limit", "price": "99.00",  "quantity": 30, "timestamp": 2},
+    ]
+    wrong = [
+        {"order_id": "B1", "status": "pending", "filled_qty": 0, "remaining_qty": 50, "fills": []},
+        {"order_id": "S1", "status": "pending", "filled_qty": 0, "remaining_qty": 30, "fills": []},
+    ]
+    report = _validator_report(actions, wrong)
+    assert report["violations_count"] >= 2, "Expected at least L1 and L2 violations for missed cross"
+    assert report["correctness_rate"] < 1.0
+
+
+def test_correctness_rate_never_goes_negative():
+    """
+    Regression: with more violations than actions the formula 1 - v/n goes
+    negative.  It must be clamped to 0.
+    """
+    actions = [
+        {"order_id": "X1", "side": "buy", "type": "limit", "price": "50.00", "quantity": 10, "timestamp": 1},
+    ]
+    # Many wrong fields → many violations from a single action
+    very_wrong = [
+        {"order_id": "X1", "status": "filled", "filled_qty": 999, "remaining_qty": 999,
+         "fills": [
+             {"fill_id": "f1", "resting_order_id": "ghost", "price": "9999.00", "quantity": 999, "timestamp": 1},
+         ]},
+    ]
+    report = _validator_report(actions, very_wrong)
+    assert report["correctness_rate"] >= 0.0, (
+        f"correctness_rate went negative: {report['correctness_rate']}"
+    )

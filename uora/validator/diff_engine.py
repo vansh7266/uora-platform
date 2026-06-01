@@ -215,7 +215,7 @@ class CorrectnessValidator:
             "total_actions": len(actions),
             "violations_count": len(self.violations),
             "violations_by_level": self._count_by_level(),
-            "correctness_rate": 1.0 - (len(self.violations) / max(len(actions), 1)),
+            "correctness_rate": max(0.0, 1.0 - (len(self.violations) / max(len(actions), 1))),
             "violations": [
                 {
                     "level": v.level,
@@ -234,11 +234,12 @@ class CorrectnessValidator:
 
         if action_type in ("limit", "market", "ioc", "fok"):
             order_id = action.get("order_id", f"order-{index}")
+            raw_price = action.get("price")
             order = Order(
                 id=order_id,
                 side=action["side"],
                 order_type=action_type,
-                price=action.get("price"),
+                price=float(raw_price) if raw_price is not None else None,
                 quantity=_action_quantity(action),
                 participant_id=action.get("participant_id", order_id),
             )
@@ -312,7 +313,10 @@ class CorrectnessValidator:
             ))
         else:
             for cf, rf in zip(contestant_fills, reference_fills):
-                if abs(cf.get("price", 0) - rf["price"]) > 0.001:
+                cf_price = cf.get("price", 0)
+                if isinstance(cf_price, str):
+                    cf_price = float(cf_price)
+                if abs(cf_price - rf["price"]) > 0.001:
                     self.violations.append(Violation(
                         level=1,
                         order_id=order_id,
