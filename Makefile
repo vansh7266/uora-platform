@@ -33,13 +33,13 @@ test-health:
 test-integration:
 	$(MAKE) up
 	@sleep 5
-	python3 -m pytest test_integration.py -x -q
+	python3 -m pytest tests/integration/test_pipeline.py -x -q
 	$(MAKE) down
 
 # ── Benchmark ───────────────────────────────────────────────────────────────
 
 benchmark:
-	python3 stress_test.py --bots 1000 --duration 60
+	python3 tests/load/stress_test.py --bots 1000 --duration 60
 
 # ── Setup ───────────────────────────────────────────────────────────────────
 
