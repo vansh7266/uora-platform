@@ -288,6 +288,41 @@ class TradingBot:
         payload = {"type": "cancel", "order_id": order_id}
         return await self._send_action(f"DELETE /api/v1/order/{order_id}", payload)
 
+    async def replay_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch a scenario action *verbatim*, preserving its own ``order_id``.
+
+        The ``send_*`` methods mint a random uuid per order, which is correct for a
+        load test but makes correctness un-checkable (a scenario ``cancel`` can't
+        reference a minted id, and responses don't line up with a reference replay).
+        ``replay_action`` keeps the scenario's ``order_id`` so a single bot can do a
+        deterministic, in-order pass whose responses align 1:1 with
+        ``CorrectnessValidator``'s reference replay. Used only for the correctness pass.
+        """
+        action_type = str(action.get("type", "")).lower()
+        if action_type == "cancel":
+            oid = str(action["order_id"])
+            return await self._send_action(
+                f"DELETE /api/v1/order/{oid}", {"type": "cancel", "order_id": oid}
+            )
+        qty = int(action.get("qty", action.get("quantity", 0)))
+        payload: dict[str, Any] = {
+            "id": str(action["order_id"]),
+            "type": action_type,
+            "side": action.get("side", ""),
+            "quantity": qty,
+            "timestamp": action.get("timestamp", time.time_ns()),
+        }
+        price = action.get("price")
+        if price is not None:
+            payload["price"] = str(price)
+        # Forward participant_id verbatim. Omitting it makes every order default to
+        # the same participant, which trips the engine's self-trade prevention and
+        # spuriously cancels crossing orders — diverging from the reference replay,
+        # which uses each action's real participant_id.
+        if action.get("participant_id") is not None:
+            payload["participant_id"] = action["participant_id"]
+        return await self._send_action("/api/v1/order", payload)
+
     # ── Latency measurement ────────────────────────────────────────────────────
 
     async def measure_latency(

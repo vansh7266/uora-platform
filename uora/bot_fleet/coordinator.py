@@ -151,6 +151,32 @@ class BotCoordinator:
         ))
         logger.info("✓ Benchmark done — %d orders, %d errors", completed, self._errors)
 
+    # ── Correctness pass ─────────────────────────────────────────────────────────
+
+    async def run_correctness_pass(
+        self, actions: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Deterministic, single-bot, in-order replay of the *unique* scenario actions.
+
+        Returns responses aligned 1:1 with ``actions`` (same order), suitable for
+        ``CorrectnessValidator.validate_submission``. This is what L1–L4 correctness is
+        scored on — ``run_benchmark`` measures latency/throughput under concurrent load
+        with minted order ids and cannot be diffed against a sequential reference replay.
+
+        Must run before ``run_benchmark`` so the engine's book is pristine.
+        """
+        if not self._bots:
+            raise RuntimeError("No workers — call start() first.")
+        bot = self._bots[0]
+        responses: list[dict[str, Any]] = []
+        for action in actions:
+            try:
+                responses.append(await bot.replay_action(action))
+            except Exception as exc:  # keep the stream 1:1 even on a failed call
+                responses.append({"status": "error", "error": str(exc)})
+        logger.info("✓ Correctness pass — %d actions replayed deterministically", len(actions))
+        return responses
+
     # ── Results ────────────────────────────────────────────────────────────────
 
     async def get_results(self) -> dict[str, Any]:

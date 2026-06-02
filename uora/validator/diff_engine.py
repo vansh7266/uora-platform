@@ -71,7 +71,10 @@ def _build_state_graph(responses: list[dict]) -> nx.DiGraph:
         for j in range(i - 1, -1, -1):
             prev_resp = responses[j]
             if prev_resp.get("order_id") == order_id:
-                prev_status = prev_resp.get("status", "unknown")
+                # Normalise here too — the node was added with a normalised label,
+                # so the edge endpoint must match it (else a phantom "id:accepted"
+                # node appears and spuriously lowers L4 graph similarity).
+                prev_status = _normalize_status(prev_resp.get("status", "unknown"))
                 prev_label = f"{order_id}:{prev_status}"
                 action_type = resp.get("type", "unknown")
                 g.add_edge(prev_label, node_label, action=action_type)
@@ -216,6 +219,11 @@ class CorrectnessValidator:
             "violations_count": len(self.violations),
             "violations_by_level": self._count_by_level(),
             "correctness_rate": max(0.0, 1.0 - (len(self.violations) / max(len(actions), 1))),
+            # L4 graph similarity in [0,1] (1.0 = state machine matches reference). The
+            # scoring worker turns this into the anomaly feature state_transition_ged
+            # (= 1 - determinism), which is the *correct* divergence measure — far better
+            # than re-deriving it from the raw action stream.
+            "determinism": round(similarity, 4),
             "violations": [
                 {
                     "level": v.level,
@@ -399,10 +407,14 @@ class CorrectnessValidator:
                 side = action.get("side", "").lower()
                 status = _normalize_status(resp.get("status", "unknown"))
                 if order_id and price is not None:
+                    remaining = resp.get("remaining_qty")
                     order_book[order_id] = {
                         "status": status,
                         "price": float(price),
                         "side": side,
+                        "remaining": int(remaining)
+                        if remaining is not None
+                        else _action_quantity(action),
                     }
 
             elif action_type == "cancel":
@@ -411,17 +423,35 @@ class CorrectnessValidator:
                     order_book[cancel_id]["status"] = _normalize_status(
                         resp.get("status", "unknown")
                     )
+                    order_book[cancel_id]["remaining"] = 0
+
+            # Consume the resting orders this response matched against. Without
+            # this, a resting order later hit by an aggressor still looks "open",
+            # producing a false crossed-book (L3) positive on a correct engine.
+            for fill in resp.get("fills", []) or []:
+                resting_id = fill.get("resting_order_id")
+                if resting_id and resting_id in order_book:
+                    qty = int(fill.get("quantity", 0) or 0)
+                    order_book[resting_id]["remaining"] = max(
+                        0, order_book[resting_id].get("remaining", 0) - qty
+                    )
+                    if order_book[resting_id]["remaining"] <= 0:
+                        order_book[resting_id]["status"] = "filled"
 
         # ── Check for crossed contestant book ────────────────────────────────
         open_bids = [
             v["price"]
             for v in order_book.values()
-            if v["status"] in ("pending", "partial_fill") and v["side"] == "buy"
+            if v["status"] in ("pending", "partial_fill")
+            and v["side"] == "buy"
+            and v.get("remaining", 0) > 0
         ]
         open_asks = [
             v["price"]
             for v in order_book.values()
-            if v["status"] in ("pending", "partial_fill") and v["side"] == "sell"
+            if v["status"] in ("pending", "partial_fill")
+            and v["side"] == "sell"
+            and v.get("remaining", 0) > 0
         ]
 
         if open_bids and open_asks:

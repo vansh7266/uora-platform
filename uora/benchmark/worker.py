@@ -138,9 +138,22 @@ class BenchmarkWorker:
         if self._db_pool:
             await self._db_pool.close()
 
+    @staticmethod
+    def _json_default(obj: Any) -> Any:
+        """Coerce non-native values (numpy scalars, sets) so a publish can never
+        crash the pipeline on a stray type. numpy scalars expose ``.item()``."""
+        if hasattr(obj, "item"):
+            return obj.item()
+        if isinstance(obj, (set, frozenset)):
+            return list(obj)
+        return str(obj)
+
     async def _publish(self, payload: dict[str, Any]) -> None:
         assert self._redis is not None
-        await self._redis.publish("uora:leaderboard:updates", json.dumps(payload))
+        await self._redis.publish(
+            "uora:leaderboard:updates",
+            json.dumps(payload, default=self._json_default),
+        )
 
     async def _update_status(self, submission_id: str, status: str, **extra: Any) -> None:
         assert self._redis is not None
@@ -430,6 +443,13 @@ class BenchmarkWorker:
                     protocol=protocol,
                 )
                 await coordinator.load_scenario(actions)
+                # Deterministic correctness pass FIRST, on the pristine book: one bot
+                # replays the unique scenario in order using the scenario's own
+                # order_ids. This is what L1–L4 is scored on. The concurrent
+                # run_benchmark below measures latency/throughput only — its
+                # out-of-order, minted-id traffic cannot be diffed against a
+                # sequential reference replay.
+                correctness_responses = await coordinator.run_correctness_pass(actions)
                 await coordinator.run_benchmark(DURATION_SEC)
                 results = await coordinator.get_results()
             finally:
@@ -460,11 +480,9 @@ class BenchmarkWorker:
             await self._record_latency_events(submission_id, results["results"])
 
             await self._update_status(submission_id, "validating")
-            attempted_actions = [r["action"] for r in results["results"]] + [
-                r["action"] for r in results.get("failed_results", [])
-            ]
-            contestant_responses = [r["result"] for r in results["results"]]
-            report = CorrectnessValidator().validate_submission(attempted_actions, contestant_responses)
+            # Score correctness on the deterministic pass (1:1 with the reference
+            # replay), not the concurrent load stream.
+            report = CorrectnessValidator().validate_submission(actions, correctness_responses)
             await self._record_validation(submission_id, report)
 
             engine = ScoringEngine(
@@ -477,10 +495,18 @@ class BenchmarkWorker:
 
             # Build the full 8-feature anomaly vector HERE, where the action/response
             # stream lives, so pattern_correlation and state_transition_ged are computed
-            # for real instead of being passed to the scorer as 0.0.
+            # for real instead of being passed to the scorer as 0.0. The action-stream
+            # features use the deterministic correctness pass (clean, in-order); latency
+            # and error_rate still come from the concurrent `results`.
             features = self._build_features(
-                submission_id, results, attempted_actions, contestant_responses
+                submission_id, results, actions, correctness_responses
             )
+            # Use the validator's L4 result for the determinism feature. extract_features
+            # can only diff the action stream (which lacks reference statuses); the
+            # validator diffs the contestant graph against the real reference replay, so
+            # its similarity is the correct signal. (1 - determinism) = divergence.
+            if features is not None and "determinism" in report:
+                features.state_transition_ged = round(1.0 - float(report["determinism"]), 4)
             # Resource penalty reported by the pipeline (the builder writes resources:{id}).
             resource_penalty = await self._read_resource_penalty(submission_id)
 
