@@ -4,11 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, PlayCircle, Users } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_USER } from "@/lib/demoData";
 import { Logo } from "@/components/ui/Logo";
-import { StatusDot } from "@/components/ui/StatusDot";
 
 type Mode = "signin" | "signup";
 
@@ -102,6 +101,12 @@ export default function AuthPage() {
     window.location.href = `${API}/auth/google`;
   };
 
+  const handleDemo = () => {
+    // One-click: drop straight into a simulated, read-only demo workspace.
+    login(DEMO_USER, true);
+    router.push("/dashboard");
+  };
+
   return (
     <div className="min-h-screen bg-[var(--void-950)] bg-grid-faint flex items-center justify-center p-4 relative overflow-hidden">
       {/* Ambient glow */}
@@ -138,16 +143,23 @@ export default function AuthPage() {
               Matching Engine Benchmarking Platform
             </p>
 
-            {/* Demo hint */}
-            <div className="mt-5 px-4 py-3 rounded bg-[rgba(0,212,255,0.04)] border border-[rgba(0,212,255,0.1)]">
-              <div className="flex items-center justify-center gap-1.5 mb-1.5">
-                <StatusDot status="idle" showLabel={false} />
-                <span className="text-[9px] font-mono text-[var(--plasma)] tracking-wider uppercase">Demo Access</span>
+            {/* One-click demo — explicit, opt-in. Real auth (below) is the default path. */}
+            <button
+              type="button"
+              onClick={handleDemo}
+              className="group mt-5 w-full px-4 py-3 rounded bg-[rgba(0,212,255,0.05)] border border-[rgba(0,212,255,0.15)] hover:bg-[rgba(0,212,255,0.09)] hover:border-[rgba(0,212,255,0.3)] transition-all"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <PlayCircle className="w-3.5 h-3.5 text-[var(--plasma)]" />
+                <span className="text-[11px] font-mono font-semibold text-[var(--plasma)] tracking-wider uppercase">
+                  Explore the Demo
+                </span>
+                <ArrowRight className="w-3 h-3 text-[var(--plasma)] group-hover:translate-x-0.5 transition-transform" />
               </div>
-              <p className="text-[11px] font-mono text-[var(--ink-400)]">
-                {DEMO_EMAIL} / {DEMO_PASSWORD}
+              <p className="mt-1 text-[9px] font-mono text-[var(--ink-500)] tracking-wide">
+                Simulated data · no sign-in required
               </p>
-            </div>
+            </button>
           </div>
 
           {/* Mode toggle */}

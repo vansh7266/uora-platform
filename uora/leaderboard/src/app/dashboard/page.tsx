@@ -118,7 +118,7 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
-            className="fixed top-12 left-[200px] right-0 z-30 flex items-center justify-between gap-4 px-5 py-2 bg-[rgba(240,185,11,0.06)] border-b border-[rgba(240,185,11,0.15)]"
+            className="fixed top-12 left-[200px] right-0 z-30 flex items-center justify-between gap-4 px-5 py-2 bg-[rgba(16,12,2,0.96)] backdrop-blur-xl border-b border-[rgba(240,185,11,0.22)] shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
           >
             <p className="text-[10px] font-mono text-[#F0B90B]">
               <strong>DEMO MODE</strong> — Simulated data. Submit an engine to benchmark against the real pipeline.

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
 import {
@@ -14,25 +15,32 @@ import {
   Globe,
   LayoutDashboard,
   Lock,
+  PlayCircle,
   Radio,
   ShieldCheck,
   Zap,
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { DEMO_USER } from "@/lib/demoData";
 
 // ── Animated orderbook (left side of hero) ────────────────────────────────────
 
 type Level = { price: number; size: number; total: number };
 
-function generateBook(side: "bid" | "ask", midprice: number): Level[] {
+// `deterministic` produces a stable first paint so server and client HTML match
+// (avoids a React hydration mismatch). After mount we re-randomize on an interval.
+function generateBook(side: "bid" | "ask", midprice: number, deterministic = false): Level[] {
   const levels: Level[] = [];
   let total = 0;
   const sign = side === "bid" ? -1 : 1;
   for (let i = 0; i < 8; i++) {
     const tick = (i + 1) * 0.25;
     const price = midprice + sign * tick;
-    const size = Math.floor(Math.random() * 600 + 100);
+    const size = deterministic
+      ? 200 + i * 55 // stable seed, identical on server + client
+      : Math.floor(Math.random() * 600 + 100);
     total += size;
     levels.push({ price: parseFloat(price.toFixed(2)), size, total });
   }
@@ -41,11 +49,16 @@ function generateBook(side: "bid" | "ask", midprice: number): Level[] {
 
 function LiveOrderbook() {
   const [midprice] = useState(18_432.5);
-  const [bids, setBids] = useState<Level[]>(() => generateBook("bid", 18_432.5));
-  const [asks, setAsks] = useState<Level[]>(() => generateBook("ask", 18_432.5));
+  // First paint is deterministic (matches SSR); randomized after mount.
+  const [bids, setBids] = useState<Level[]>(() => generateBook("bid", 18_432.5, true));
+  const [asks, setAsks] = useState<Level[]>(() => generateBook("ask", 18_432.5, true));
   const [lastTrade, setLastTrade] = useState<{ price: number; side: "bid" | "ask" }>({
     price: 18_432.5,
     side: "bid",
+  });
+  const [botStats, setBotStats] = useState<{ bots: number; ops: number }>({
+    bots: 96,
+    ops: 912,
   });
 
   useEffect(() => {
@@ -56,6 +69,10 @@ function LiveOrderbook() {
       setLastTrade({
         price: parseFloat(newPrice.toFixed(2)),
         side: Math.random() > 0.5 ? "bid" : "ask",
+      });
+      setBotStats({
+        bots: Math.floor(Math.random() * 40 + 80),
+        ops: Math.floor(Math.random() * 200 + 800),
       });
     }, 800);
     return () => clearInterval(interval);
@@ -160,7 +177,7 @@ function LiveOrderbook() {
       <div className="px-3 py-2 border-t border-[rgba(0,212,255,0.07)] flex items-center gap-2">
         <Bot className="w-3 h-3 text-[var(--plasma)]" />
         <span className="text-[9px] font-mono text-[var(--ink-400)]">
-          {Math.floor(Math.random() * 40 + 80)} bots active · {Math.floor(Math.random() * 200 + 800).toLocaleString()} orders/s
+          {botStats.bots} bots active · {botStats.ops.toLocaleString()} orders/s
         </span>
       </div>
     </div>
@@ -452,6 +469,14 @@ function StatsTicker() {
 export default function HomePage() {
   const heroRef = useRef<HTMLDivElement>(null);
   const inView = useInView(heroRef, { once: true });
+  const router = useRouter();
+  const login = useAuthStore((s) => s.login);
+
+  const handleDemo = () => {
+    // One-click into the simulated demo workspace. The real console is /auth.
+    login(DEMO_USER, true);
+    router.push("/dashboard");
+  };
 
   return (
     <div className="min-h-screen bg-[var(--void-950)] text-[var(--ink-200)]">
@@ -556,9 +581,10 @@ export default function HomePage() {
               Submit Your Engine
               <ArrowRight className="w-4 h-4" />
             </Link>
-            <Link href="/dashboard" className="btn-ghost text-sm">
-              View Live Leaderboard
-            </Link>
+            <button onClick={handleDemo} className="btn-ghost text-sm gap-2">
+              <PlayCircle className="w-4 h-4" />
+              Try Live Demo
+            </button>
           </motion.div>
 
           {/* Split hero panels */}
@@ -672,10 +698,16 @@ export default function HomePage() {
             Supports C++20, Rust, and Go. Upload your source, watch the pipeline run,
             and see your name on the leaderboard in under two minutes.
           </p>
-          <Link href="/auth" className="btn-plasma text-sm px-8 py-3">
-            Launch the Console
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/auth" className="btn-plasma text-sm px-8 py-3">
+              Launch the Console
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <button onClick={handleDemo} className="btn-ghost text-sm px-8 py-3 gap-2">
+              <PlayCircle className="w-4 h-4" />
+              Try Live Demo
+            </button>
+          </div>
         </div>
       </section>
 
