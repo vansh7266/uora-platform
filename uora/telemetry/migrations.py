@@ -38,9 +38,33 @@ async def _ensure_submission_id_text(conn: Any, table_name: str) -> None:
         logger.info("Migrated %s.submission_id from %s to text", table_name, data_type)
 
 
+async def _timescale_available(conn: Any) -> bool:
+    """Try to enable the timescaledb extension; return False if it isn't installed.
+
+    Production runs on the timescale/timescaledb image where the extension is always
+    present. On a plain PostgreSQL (e.g. local dev, or a managed PG without the
+    extension) we degrade gracefully to ordinary tables — the leaderboard, scoring,
+    and validation queries are standard SQL and do not require hypertables. Only the
+    time-series partitioning and continuous aggregate are skipped.
+    """
+    try:
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
+        return True
+    except Exception as exc:  # extension not available on this server
+        logger.warning(
+            "timescaledb extension unavailable — using plain PostgreSQL tables "
+            "(hypertable + continuous aggregate skipped): %s",
+            exc,
+        )
+        return False
+
+
 async def ensure_timescale_schema(conn: Any) -> None:
-    """Create or migrate the runtime Timescale schema without requiring a wiped volume."""
-    await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
+    """Create or migrate the runtime schema without requiring a wiped volume.
+
+    Works on both TimescaleDB and plain PostgreSQL (degrades gracefully).
+    """
+    has_timescale = await _timescale_available(conn)
 
     await conn.execute(
         """
@@ -160,30 +184,33 @@ async def ensure_timescale_schema(conn: Any) -> None:
     for table_name in ("latency_events", "correctness_violations", "benchmark_scores", "validation_results", "build_events"):
         await _ensure_submission_id_text(conn, table_name)
 
-    await conn.execute(
-        """
-        SELECT create_hypertable(
-            'latency_events',
-            'time',
-            chunk_time_interval => INTERVAL '1 hour',
-            if_not_exists => TRUE
+    # ── TimescaleDB-only features (hypertable + continuous aggregate) ────────────
+    # Skipped on plain PostgreSQL so the platform still runs end-to-end.
+    if has_timescale:
+        await conn.execute(
+            """
+            SELECT create_hypertable(
+                'latency_events',
+                'time',
+                chunk_time_interval => INTERVAL '1 hour',
+                if_not_exists => TRUE
+            )
+            """
         )
-        """
-    )
 
-    await conn.execute(
-        """
-        CREATE MATERIALIZED VIEW IF NOT EXISTS latency_1min
-        WITH (timescaledb.continuous) AS
-        SELECT
-            time_bucket('1 minute', time) AS bucket,
-            submission_id,
-            COUNT(*) AS throughput,
-            AVG(latency_ns) AS avg_latency
-        FROM latency_events
-        GROUP BY bucket, submission_id
-        """
-    )
+        await conn.execute(
+            """
+            CREATE MATERIALIZED VIEW IF NOT EXISTS latency_1min
+            WITH (timescaledb.continuous) AS
+            SELECT
+                time_bucket('1 minute', time) AS bucket,
+                submission_id,
+                COUNT(*) AS throughput,
+                AVG(latency_ns) AS avg_latency
+            FROM latency_events
+            GROUP BY bucket, submission_id
+            """
+        )
 
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_latency_submission_id ON latency_events (submission_id, time DESC)")
     await conn.execute(
@@ -195,17 +222,18 @@ async def ensure_timescale_schema(conn: Any) -> None:
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_scores_submission_id ON benchmark_scores (submission_id, time DESC)")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_build_events_submission_id ON build_events (submission_id, time DESC)")
 
-    try:
-        await conn.execute(
-            """
-            SELECT add_continuous_aggregate_policy(
-                'latency_1min',
-                start_offset => INTERVAL '1 hour',
-                end_offset => INTERVAL '1 minute',
-                schedule_interval => INTERVAL '1 minute',
-                if_not_exists => true
+    if has_timescale:
+        try:
+            await conn.execute(
+                """
+                SELECT add_continuous_aggregate_policy(
+                    'latency_1min',
+                    start_offset => INTERVAL '1 hour',
+                    end_offset => INTERVAL '1 minute',
+                    schedule_interval => INTERVAL '1 minute',
+                    if_not_exists => true
+                )
+                """
             )
-            """
-        )
-    except Exception as exc:
-        logger.warning("Continuous aggregate policy check skipped: %s", exc)
+        except Exception as exc:
+            logger.warning("Continuous aggregate policy check skipped: %s", exc)

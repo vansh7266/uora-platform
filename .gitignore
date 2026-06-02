@@ -23,12 +23,13 @@ out/
 .env.local
 .env.*.local
 
-# IDE
+# IDE / tooling
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.claude/settings.local.json
 
 # OS
 .DS_Store

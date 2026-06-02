@@ -1,6 +1,6 @@
 # UORA Platform — Makefile
 .PHONY: up down logs test test-lob test-ml test-validator test-health \
-        test-integration benchmark setup setup-k3s fmt clean
+        test-integration benchmark e2e setup setup-k3s fmt clean
 
 # ── Docker ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,12 @@ test-integration:
 
 benchmark:
 	python3 tests/load/stress_test.py --bots 1000 --duration 60
+
+# Real end-to-end: TimescaleDB + Redis containers + the full
+# benchmark→validate→score→serve pipeline against the reference engine,
+# verified over the live SSE leaderboard. See scripts/local_e2e.sh.
+e2e:
+	bash scripts/local_e2e.sh
 
 # ── Setup ───────────────────────────────────────────────────────────────────
 

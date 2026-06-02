@@ -25,6 +25,7 @@
 #include <sstream>
 #include <mutex>
 #include <ctime>
+#include <cstdlib>
 
 // Extract a string field from a flat JSON object.  Handles "key":"value" only.
 static std::string json_str(const std::string& body, const std::string& key) {
@@ -225,8 +226,13 @@ int main() {
             "application/json");
     });
 
-    std::cout << "UORA C++ Engine listening on 0.0.0.0:8080" << std::endl;
+    // Port is configurable via $PORT (defaults to the platform's expected 8080).
+    const char* port_env = std::getenv("PORT");
+    int port = port_env ? std::atoi(port_env) : 8080;
+    if (port <= 0) port = 8080;
+
+    std::cout << "UORA C++ Engine listening on 0.0.0.0:" << port << std::endl;
     std::cout << "Endpoints: GET /health  POST /api/v1/order  DELETE /api/v1/order/{id}" << std::endl;
-    svr.listen("0.0.0.0", 8080);
+    svr.listen("0.0.0.0", port);
     return 0;
 }

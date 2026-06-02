@@ -213,4 +213,6 @@ async def stream(websocket: WebSocket):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8080, loop="uvloop")
+    import os
+    port = int(os.getenv("PORT", os.getenv("REFERENCE_ENGINE_PORT", "8080")))
+    uvicorn.run(app, host="0.0.0.0", port=port, loop="uvloop")
