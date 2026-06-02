@@ -61,7 +61,10 @@ class MLAnomalyDetector:
     Any submission that deviates significantly is flagged for review.
     """
 
-    CONTAMINATION: float = 0.05   # Expected % of anomalies in population
+    # Low contamination: the synthetic baseline is by construction all-normal, so the
+    # boundary should be loose. A high value (0.05) made the model flag clean real
+    # engines that merely sat in a sparse corner of the 8-D feature cube.
+    CONTAMINATION: float = 0.01   # Expected % of anomalies in population
     N_ESTIMATORS: int = 100
     RANDOM_STATE: int = 42
 
@@ -102,20 +105,31 @@ class MLAnomalyDetector:
         self.is_fitted = True
         print(f"✓ ML Detector trained on {len(self.normal_profiles)} normal profiles")
 
-    def _generate_synthetic_normal_data(self, n: int = 100) -> None:
-        """Generate realistic normal profiles for demo/training purposes."""
+    def _generate_synthetic_normal_data(self, n: int = 600) -> None:
+        """Generate realistic normal profiles for training.
+
+        Sampled as Gaussians centred on values a *healthy* engine actually produces
+        (calibrated against real reference-engine runs), not a uniform cube. Uniform
+        noise has no normal manifold, so IsolationForest flagged clean engines that
+        happened to sit in a sparse corner; a centred cloud puts real engines in the
+        dense middle (inliers) while leaving cheats/crashes far outside.
+        """
         rng = np.random.default_rng(self.RANDOM_STATE)
+
+        def g(mean: float, std: float, lo: float, hi: float) -> float:
+            return float(min(hi, max(lo, rng.normal(mean, std))))
+
         for i in range(n):
             self.normal_profiles.append(BenchmarkFeatures(
                 submission_id=f"synthetic-normal-{i}",
-                latency_entropy=rng.uniform(500_000, 50_000_000),    # Realistic variance
-                pattern_correlation=rng.uniform(0.0, 0.4),           # low correlation
-                volume_conservation_delta=rng.uniform(0, 10),        # near-zero
-                state_transition_ged=rng.uniform(0, 0.15),           # deterministic
-                latency_trend_slope=rng.uniform(-0.002, 0.002),      # flat trend
-                throughput_variance=rng.uniform(1000, 20000),        # moderate variance
-                error_rate=rng.uniform(0.0, 0.03),                   # <3% errors
-                p99_to_p50_ratio=rng.uniform(2.0, 5.0)               # healthy tail
+                latency_entropy=g(4_000_000, 3_500_000, 100_000, 50_000_000),  # ~0.1–10ms std
+                pattern_correlation=g(0.12, 0.12, 0.0, 0.6),         # low correlation
+                volume_conservation_delta=g(2, 3, 0, 30),            # near-zero
+                state_transition_ged=g(0.05, 0.06, 0.0, 0.4),        # deterministic
+                latency_trend_slope=g(-0.05, 0.12, -0.5, 0.3),       # warmup (−) healthy; rising (+) = leak
+                throughput_variance=g(18_000, 16_000, 500, 120_000),  # real loopback runs ~8k–40k
+                error_rate=g(0.01, 0.012, 0.0, 0.06),                # <~3% errors
+                p99_to_p50_ratio=g(3.3, 1.3, 1.0, 8.0),              # healthy tail (p99 a few× p50)
             ))
 
     # ─── Detection ──────────────────────────────────────────────────────────
@@ -146,8 +160,13 @@ class MLAnomalyDetector:
 
         rule_triggered = (
             features.pattern_correlation > 0.95
-            or (0 < features.latency_entropy < 1e6)
-            or abs(features.latency_trend_slope) > 0.01
+            # Near-zero latency std (< 0.1ms across thousands of requests) ⇒ faked/
+            # throttled clock. A merely *fast, consistent* engine has std ~0.5ms and
+            # must NOT trip this — 1e6 (1ms) flagged every legitimate sub-ms engine.
+            or (0 < features.latency_entropy < 100_000)
+            # Rising latency = possible memory leak. Only positive drift is suspect;
+            # negative (warmup/JIT) is healthy. > 0.5 ≈ latency grew 50%+ over the run.
+            or features.latency_trend_slope > 0.5
             or features.error_rate > 0.1
             or features.p99_to_p50_ratio > 10.0
             or features.volume_conservation_delta > 100
@@ -157,7 +176,9 @@ class MLAnomalyDetector:
         if rule_triggered:
             anomaly_score = max(anomaly_score, 0.85)
 
-        is_anomaly = raw_pred == -1 or rule_triggered
+        # bool(...) coerces numpy.bool_ (from sklearn's predict) to a native Python
+        # bool so the result stays JSON-serializable downstream (Redis publish, SSE).
+        is_anomaly = bool(raw_pred == -1 or rule_triggered)
         reason = self._explain_anomaly(features, anomaly_score)
         confidence = anomaly_score if is_anomaly else 1.0 - anomaly_score
 
@@ -175,9 +196,9 @@ class MLAnomalyDetector:
 
         if f.pattern_correlation > 0.95:
             reasons.append("Perfect correlation with test patterns (hardcoded responses)")
-        if f.latency_entropy < 1e6 and f.latency_entropy > 0:  # < 1ms std dev
+        if 0 < f.latency_entropy < 100_000:  # < 0.1ms std dev ⇒ faked/throttled clock
             reasons.append("Latency entropy collapse (engine crash/restart detected)")
-        if abs(f.latency_trend_slope) > 0.01:
+        if f.latency_trend_slope > 0.5:
             reasons.append(f"Latency degradation trend (slope={f.latency_trend_slope:.4f})")
         if f.error_rate > 0.1:
             reasons.append(f"High error rate ({f.error_rate*100:.1f}%)")
@@ -262,11 +283,15 @@ class MLAnomalyDetector:
         con_graph = _build_state_graph(actual_actions)
         state_transition_ged = 1.0 - _ged_normalized(ref_graph, con_graph)
 
-        # 5. Latency trend slope (linear regression on time series)
+        # 5. Latency trend slope — total fractional latency drift across the run.
+        #    Normalised (slope·n / mean) so it is scale-free: +1.0 ≈ latency doubled
+        #    end-to-end (memory leak), ~0 = flat, negative = warmup/improvement. The
+        #    raw ns/index slope was off by ~6 orders of magnitude vs the training scale.
         if len(latencies) >= 2:
             x = np.arange(len(latencies))
             slope, _ = np.polyfit(x, arr, 1)
-            latency_trend_slope = float(slope)
+            mean_lat = float(np.mean(arr)) or 1.0
+            latency_trend_slope = float(slope * len(latencies) / mean_lat)
         else:
             latency_trend_slope = 0.0
 
