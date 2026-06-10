@@ -78,7 +78,7 @@ export function Sidebar({ active, onChange }: SidebarProps) {
         <div className="px-3 py-2 rounded bg-[var(--void-700)] border border-[rgba(0,212,255,0.07)]">
           <div className="label-mono mb-1">Platform</div>
           <div className="text-[10px] font-mono text-[var(--ink-500)]">UORA v2.0</div>
-          <div className="text-[10px] font-mono text-[var(--ink-500)]">IICPC 2026</div>
+          <div className="text-[10px] font-mono text-[var(--ink-500)]">Production build</div>
         </div>
       </div>
     </aside>

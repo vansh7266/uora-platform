@@ -294,7 +294,7 @@ export default function AuthPage() {
         </motion.div>
 
         <p className="mt-5 text-center text-[9px] font-mono text-[var(--ink-500)] uppercase tracking-widest">
-          UORA · IICPC 2026 · SHA-256 / AES-256
+          UORA · SHA-256 / AES-256 · Bcrypt
         </p>
       </div>
     </div>
