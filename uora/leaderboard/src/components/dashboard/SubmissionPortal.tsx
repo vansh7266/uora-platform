@@ -13,21 +13,68 @@ import {
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
-import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
+import { useLeaderboardStore, LeaderboardEntry } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
 import { LanguageBadge, StatusBadge } from "@/components/ui/Badge";
 import { DEMO_PIPELINE_STAGES } from "@/lib/demoData";
+
+function relativeTime(ts: number): string {
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 5_000) return "just now";
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+function ScoreInline({ entry }: { entry: LeaderboardEntry }) {
+  const fmtTps = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+    return `${n.toFixed(0)}`;
+  };
+  return (
+    <div className="mt-2 grid grid-cols-4 gap-2 p-3 rounded border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)]">
+      <div>
+        <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-500)]">Score</p>
+        <p className="text-base font-mono font-bold text-[var(--plasma)] tabular-nums">
+          {entry.composite_score.toFixed(1)}
+        </p>
+      </div>
+      <div>
+        <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-500)]">P99 Latency</p>
+        <p className="text-base font-mono font-bold text-[var(--ink-100)] tabular-nums">
+          {entry.p99_latency_ms.toFixed(2)}<span className="text-[10px] font-normal text-[var(--ink-400)] ml-0.5">ms</span>
+        </p>
+      </div>
+      <div>
+        <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-500)]">Throughput</p>
+        <p className="text-base font-mono font-bold text-[var(--ink-100)] tabular-nums">
+          {fmtTps(entry.throughput)}<span className="text-[10px] font-normal text-[var(--ink-400)] ml-0.5">o/s</span>
+        </p>
+      </div>
+      <div>
+        <p className="text-[9px] font-mono uppercase tracking-wider text-[var(--ink-500)]">Correctness</p>
+        <p className={`text-base font-mono font-bold tabular-nums ${entry.correctness_rate >= 0.95 ? "text-[var(--bid)]" : entry.correctness_rate >= 0.5 ? "text-[#F0B90B]" : "text-[var(--ask)]"}`}>
+          {(entry.correctness_rate * 100).toFixed(1)}<span className="text-[10px] font-normal text-[var(--ink-400)] ml-0.5">%</span>
+        </p>
+      </div>
+    </div>
+  );
+}
 
 const LANG_EXT: Record<string, string> = {
   ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp",
   ".rs": "rust",
   ".go": "go",
+  ".py": "python",
 };
 
 const LANG_LABEL: Record<string, string> = {
   cpp: "C++20 · GCC 13",
   rust: "Rust · rustc 1.75",
   go: "Go · 1.21",
+  python: "Python · 3.13",
 };
 
 function detectLang(filename: string): string | null {
@@ -121,7 +168,7 @@ interface SubmissionPortalProps { isDemo?: boolean }
 
 export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
   const { user } = useAuthStore();
-  const { addSubmission, updateSubmissionStatus, submissions } = useLeaderboardStore();
+  const { addSubmission, updateSubmissionStatus, submissions, entries } = useLeaderboardStore();
   const [file, setFile] = useState<File | null>(null);
   const [lang, setLang] = useState<string | null>(null);
   const [badType, setBadType] = useState(false);
@@ -179,9 +226,14 @@ export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
       const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const form = new FormData();
       form.append("file", file, file.name);
-      form.append("language", lang);
 
-      const res = await fetch(`${API}/api/v1/submit`, {
+      // The backend accepts `language` as a query parameter (FastAPI default
+      // — not annotated with Form). Putting it in the form body is silently
+      // dropped, leading to auto-detect failures for tarballs / .py files.
+      const url = new URL(`${API}/api/v1/submit`);
+      url.searchParams.set("language", lang);
+
+      const res = await fetch(url.toString(), {
         method: "POST",
         credentials: "include",
         body: form,
@@ -247,7 +299,7 @@ export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
               ref={fileRef}
               type="file"
               className="sr-only"
-              accept=".cpp,.cc,.cxx,.rs,.go,.tar.gz,.tgz,.zip"
+              accept=".cpp,.cc,.cxx,.rs,.go,.py,.tar.gz,.tgz,.zip"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) selectFile(f); }}
             />
             <AnimatePresence mode="wait">
@@ -295,7 +347,7 @@ export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
                       Drop your engine here
                     </p>
                     <p className="text-[11px] text-[var(--ink-400)] mt-0.5">
-                      .cpp .rs .go .tar.gz .zip · Max 50 MB
+                      .cpp .rs .go .py .tar.gz .zip · Max 50 MB
                     </p>
                   </div>
                   <button
@@ -371,25 +423,40 @@ export function SubmissionPortal({ isDemo = false }: SubmissionPortalProps) {
             <PanelTitle>Recent Submissions</PanelTitle>
           </PanelHeader>
           <div className="divide-y divide-[rgba(255,255,255,0.04)]">
-            {recentSubmissions.map((sub) => (
-              <div key={sub.id} className="px-5 py-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <LanguageBadge lang={sub.language} />
-                    <span className="text-[11px] font-mono text-[var(--ink-400)] truncate">
-                      {sub.id.slice(0, 14)}…
-                    </span>
+            {recentSubmissions.map((sub) => {
+              const entry = entries.find((e) => e.submission_id === sub.id);
+              return (
+                <div key={sub.id} className="px-5 py-3.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <LanguageBadge lang={sub.language} />
+                      <span className="text-[11px] font-mono text-[var(--ink-400)] truncate">
+                        {sub.id.slice(0, 14)}…
+                      </span>
+                      <span className="text-[10px] font-mono text-[var(--ink-500)] flex-shrink-0">
+                        · {relativeTime(sub.submittedAt)}
+                      </span>
+                    </div>
+                    <StatusBadge status={sub.status} />
                   </div>
-                  <StatusBadge status={sub.status} />
+                  {sub.status !== "scored" && sub.status !== "failed" && (
+                    <PipelineTracker status={sub.status} />
+                  )}
+                  {sub.status === "scored" && entry && <ScoreInline entry={entry} />}
+                  {sub.status === "scored" && !entry && (
+                    <p className="text-[10px] font-mono text-[var(--ink-400)] italic">
+                      Awaiting leaderboard sync…
+                    </p>
+                  )}
+                  {sub.error && (
+                    <div className="flex items-start gap-2 p-2.5 rounded bg-[rgba(234,57,67,0.06)] border border-[rgba(234,57,67,0.2)]">
+                      <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5 text-[var(--ask)]" />
+                      <p className="text-[10px] font-mono text-[var(--ask)] leading-relaxed">{sub.error}</p>
+                    </div>
+                  )}
                 </div>
-                {sub.status !== "scored" && sub.status !== "failed" && (
-                  <PipelineTracker status={sub.status} />
-                )}
-                {sub.error && (
-                  <p className="text-[10px] font-mono text-[var(--ask)]">{sub.error}</p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </GlassPanel>
       )}
