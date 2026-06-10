@@ -30,6 +30,8 @@ out/
 *.swo
 *~
 .claude/settings.local.json
+.claude/launch.json
+**/.claude/launch.json
 
 # OS
 .DS_Store

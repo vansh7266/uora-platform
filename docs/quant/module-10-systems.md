@@ -225,8 +225,8 @@ components — real `resource_penalty`, the two zeroed anomaly features — not 
    security win. What can't an attacker do inside it?
 3. **Idempotency hunt.** Pick one pipeline stage. What happens if it runs twice on the same
    job? Is it safe? If not, how would you make it idempotent?
-4. **Run it (if you have Docker).** `docker compose up` the stack, submit `dummy_bot.cpp`, and
-   watch the status transitions in Redis (`HGETALL submission:<id>`).
+4. **Run it.** Bring up the local stack (`make e2e` or `docker compose up`), submit
+   `examples/dummy_engine.py`, and watch the status transitions in Redis (`HGETALL submission:<id>`).
 5. **Stretch.** Sketch how you'd add a *second* benchmarker for horizontal scale. What changes
    in the consumer-group code? (Hint: trick question — that's the point of consumer groups.)
 

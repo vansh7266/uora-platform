@@ -148,9 +148,9 @@ uora-platform/
 │   ├── api/openapi-3.0.yaml
 │   └── demo-script.md
 ├── examples/
-│   ├── working_engine.cpp    # Minimal C++ engine skeleton
-│   ├── dummy_matching_engine.cpp
-│   └── httplib.h
+│   ├── dummy_engine.py      # Python stdlib-only engine — minimal valid submission
+│   ├── working_engine.cpp   # C++ engine skeleton with HTTP contract
+│   └── httplib.h            # Bundled single-header HTTP lib for the C++ skeleton
 ├── infra/
 │   ├── envoy/            # Envoy proxy with nanosecond timing filter
 │   ├── k8s/              # gVisor RuntimeClass + RBAC manifests

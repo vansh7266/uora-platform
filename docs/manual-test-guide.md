@@ -57,18 +57,20 @@ Expected:
 
 ## 4. Submit A Dummy Engine
 
-Use the included C++ engine:
+Use the included Python engine (stdlib-only, no dependencies):
 
 ```text
-/Users/vanshgupta/Desktop/uora/examples/dummy_matching_engine.cpp
+examples/dummy_engine.py
 ```
+
+Or the C++ skeleton (`examples/working_engine.cpp` + `examples/httplib.h`).
 
 Dashboard path:
 
 1. Open `http://localhost:3000/dashboard`.
 2. Sign in if needed.
 3. Open the **Submit** tab.
-4. Upload `examples/dummy_matching_engine.cpp`.
+4. Upload `examples/dummy_engine.py`.
 5. Submit for benchmarking.
 6. Watch the recent submission pipeline.
 
@@ -77,8 +79,8 @@ API path:
 ```bash
 curl -i -X POST http://localhost:8000/api/v1/submit \
   -b "uora_session=<paste-session-cookie>" \
-  -F "language=cpp" \
-  -F "file=@/Users/vanshgupta/Desktop/uora/examples/dummy_matching_engine.cpp"
+  -F "language=python" \
+  -F "file=@examples/dummy_engine.py"
 ```
 
 Expected:
