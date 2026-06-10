@@ -230,6 +230,15 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json(404, {"error": "not found"})
 
+    def do_DELETE(self) -> None:
+        # Platform contract: DELETE /api/v1/order/{order_id}
+        prefix = "/api/v1/order/"
+        if self.path.startswith(prefix):
+            order_id = self.path[len(prefix):]
+            self._send_json(200, LOB.cancel(order_id))
+            return
+        self._send_json(404, {"error": "not found"})
+
 
 def main() -> None:
     port = int(os.environ.get("PORT", "8080"))

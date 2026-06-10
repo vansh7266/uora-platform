@@ -539,14 +539,15 @@ async def submit_code(
     # Auto-detect language
     if language == "auto":
         lang_map = {"cpp": "cpp", "cc": "cpp", "c++": "cpp",
-                    "cxx": "cpp", "rs": "rust", "go": "go"}
+                    "cxx": "cpp", "rs": "rust", "go": "go",
+                    "py": "python"}
         language = lang_map.get(ext, "unknown")
     else:
         language = {"c++": "cpp"}.get(language.lower(), language.lower())
 
-    supported_languages = {"cpp", "rust", "go"}
+    supported_languages = {"cpp", "rust", "go", "python"}
     if language not in supported_languages:
-        raise HTTPException(400, f"Unsupported language '{language}'. Supported: cpp, rust, go")
+        raise HTTPException(400, f"Unsupported language '{language}'. Supported: cpp, rust, go, python")
 
     s3_key = f"submissions/{submission_id}/source.{ext}"
 
