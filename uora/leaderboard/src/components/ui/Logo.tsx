@@ -7,17 +7,17 @@ interface LogoProps {
 }
 
 const sizes = {
-  xs: { mark: 20, text: "text-sm tracking-[0.2em]" },
-  sm: { mark: 26, text: "text-base tracking-[0.22em]" },
-  md: { mark: 36, text: "text-xl tracking-[0.24em]" },
-  lg: { mark: 52, text: "text-3xl tracking-[0.26em]" },
+  xs: { mark: 22, text: "text-sm tracking-[0.22em]" },
+  sm: { mark: 28, text: "text-base tracking-[0.24em]" },
+  md: { mark: 38, text: "text-xl tracking-[0.26em]" },
+  lg: { mark: 56, text: "text-3xl tracking-[0.28em]" },
 };
 
 export function Logo({ size = "sm", wordmark = true, className = "" }: LogoProps) {
   const s = sizes[size];
   return (
     <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
-      {/* Mark: stylised "U" with plasma accent */}
+      {/* Mark: LOB market-depth staircase — bid (left, green) + ask (right, red) — the literal shape of an order book. */}
       <svg
         width={s.mark}
         height={s.mark}
@@ -26,27 +26,52 @@ export function Logo({ size = "sm", wordmark = true, className = "" }: LogoProps
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
       >
-        {/* Outer ring */}
-        <circle cx="16" cy="16" r="15" stroke="rgba(0,212,255,0.25)" strokeWidth="1" />
-        {/* U shape */}
-        <path
-          d="M9 8 L9 19 Q9 24 16 24 Q23 24 23 19 L23 8"
-          stroke="#00D4FF"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          fill="none"
+        {/* Subtle frame */}
+        <rect
+          x="1.5"
+          y="1.5"
+          width="29"
+          height="29"
+          rx="4"
+          stroke="rgba(0,212,255,0.18)"
+          strokeWidth="1"
         />
-        {/* Inner accent bar */}
-        <line x1="12" y1="8" x2="12" y2="16" stroke="rgba(0,212,255,0.4)" strokeWidth="1" strokeLinecap="round" />
-        <line x1="20" y1="8" x2="20" y2="16" stroke="rgba(0,212,255,0.4)" strokeWidth="1" strokeLinecap="round" />
-        {/* Plasma dot at bottom of U */}
-        <circle cx="16" cy="24" r="2" fill="#00D4FF" />
+
+        {/* Bid staircase (left) — green, ascending toward the mid */}
+        <path
+          d="M3 26 L3 22 L7 22 L7 18 L11 18 L11 14 L15 14 L15 26 Z"
+          fill="rgba(22,199,132,0.18)"
+          stroke="#16C784"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
+
+        {/* Ask staircase (right) — red, descending from the mid */}
+        <path
+          d="M29 26 L29 22 L25 22 L25 18 L21 18 L21 14 L17 14 L17 26 Z"
+          fill="rgba(234,57,67,0.18)"
+          stroke="#EA3943"
+          strokeWidth="1.1"
+          strokeLinejoin="round"
+        />
+
+        {/* Mid-price marker — plasma cyan vertical line */}
+        <line
+          x1="16"
+          y1="5"
+          x2="16"
+          y2="14"
+          stroke="#00D4FF"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+        <circle cx="16" cy="5" r="1.6" fill="#00D4FF" />
       </svg>
 
       {wordmark && (
         <span
           className={`font-mono font-bold uppercase ${s.text}`}
-          style={{ color: "#F0F6FC", letterSpacing: "0.22em" }}
+          style={{ color: "#F0F6FC" }}
         >
           UORA
         </span>
