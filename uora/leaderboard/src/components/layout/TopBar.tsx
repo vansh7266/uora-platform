@@ -1,16 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { LogOut, Radio } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { Logo } from "@/components/ui/Logo";
 import { StatusDot } from "@/components/ui/StatusDot";
 
 export function TopBar() {
+  const router = useRouter();
   const { user, isAuthenticated, isDemo, logout } = useAuthStore();
-  const { connected, lastUpdated } = useLeaderboardStore();
+  const { connected, lastUpdated, reset: resetLeaderboard } = useLeaderboardStore();
+
+  const handleSignOut = async () => {
+    // Best-effort backend clear (cookie is httponly — JS can't touch it).
+    // Demo mode has no server session, so skip the network call.
+    if (!isDemo) {
+      try {
+        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        await fetch(`${api}/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch {
+        // Continue even if the server is unreachable — local state still resets.
+      }
+    }
+    // Wipe leaderboard cache so seed data from a previous demo session
+    // can't follow the user into the next sign-in.
+    resetLeaderboard();
+    logout();
+    router.replace("/auth");
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-12 flex items-center border-b border-[rgba(255,255,255,0.05)] bg-[rgba(1,5,9,0.95)] backdrop-blur-xl">
@@ -53,9 +76,9 @@ export function TopBar() {
             </div>
             <motion.button
               whileTap={{ scale: 0.95 }}
-              onClick={logout}
+              onClick={handleSignOut}
               title="Sign out"
-              className="p-1.5 rounded text-[var(--ink-500)] hover:text-[var(--ink-200)] hover:bg-[var(--void-700)] transition-colors"
+              className="p-1.5 rounded text-[var(--ink-500)] hover:text-[var(--ink-200)] hover:bg-[var(--void-700)] transition-colors cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
             </motion.button>

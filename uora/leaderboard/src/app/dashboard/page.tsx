@@ -39,7 +39,8 @@ export default function DashboardPage() {
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
 
   const { isAuthenticated, isLoading, isDemo, login } = useAuthStore();
-  const { entries, submissions, setEntries, addMetrics, addAnomaly, addSubmission } = useLeaderboardStore();
+  const { entries, submissions, setEntries, addMetrics, addAnomaly, addSubmission, reset: resetLeaderboard } =
+    useLeaderboardStore();
 
   // SSE for real users
   useSSE(isDemo ? "" : "/api/leaderboard");
@@ -52,14 +53,18 @@ export default function DashboardPage() {
     return () => clearTimeout(t);
   }, [section]);
 
-  // Seed demo data
+  // Seed demo data, or wipe stale demo data when entering a real session.
+  // A real account must never see anything from a previous demo run.
   useEffect(() => {
-    if (!isDemo) return;
-    setEntries(DEMO_ENTRIES);
-    DEMO_METRICS.forEach(addMetrics);
-    DEMO_ANOMALIES.forEach(addAnomaly);
-    DEMO_SUBMISSIONS.forEach(addSubmission);
-  }, [isDemo, setEntries, addMetrics, addAnomaly, addSubmission]);
+    if (isDemo) {
+      setEntries(DEMO_ENTRIES);
+      DEMO_METRICS.forEach(addMetrics);
+      DEMO_ANOMALIES.forEach(addAnomaly);
+      DEMO_SUBMISSIONS.forEach(addSubmission);
+    } else {
+      resetLeaderboard();
+    }
+  }, [isDemo, setEntries, addMetrics, addAnomaly, addSubmission, resetLeaderboard]);
 
   // Auth guard
   useEffect(() => {

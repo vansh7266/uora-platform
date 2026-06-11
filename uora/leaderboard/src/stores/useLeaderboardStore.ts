@@ -73,6 +73,9 @@ interface LeaderboardState {
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedEntry: (entry: LeaderboardEntry | null) => void;
+  /** Wipe everything in the store. Called on sign-out so demo data never
+   *  leaks into a subsequent real session, and vice-versa. */
+  reset: () => void;
 }
 
 export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
@@ -146,4 +149,15 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
   setConnected: (connected) => set({ connected }),
   setError: (error) => set({ error }),
   setSelectedEntry: (entry) => set({ selectedEntry: entry }),
+  reset: () =>
+    set({
+      entries: [],
+      metrics: [],
+      anomalies: [],
+      submissions: [],
+      connected: false,
+      error: null,
+      selectedEntry: null,
+      lastUpdated: null,
+    }),
 }));
