@@ -71,7 +71,8 @@ export function useSSE(url: string = "/api/leaderboard") {
             data.submission_id,
             data.status,
             data.error ?? undefined,
-            data.status === "failed" ? (data.failed_stage || "building") : undefined
+            data.status === "failed" ? (data.failed_stage || "building") : undefined,
+            data.build_log ?? undefined,
           );
         } else if (data.type === "benchmark_complete") {
           updateSubmissionStatus(data.submission_id, "scored");

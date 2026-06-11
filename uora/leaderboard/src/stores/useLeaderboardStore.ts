@@ -50,6 +50,8 @@ export interface Submission {
     | "scored"
     | "failed";
   submittedAt: number;
+  /** Compiler/interpreter output captured by the builder. Streamed in as
+   *  `build_log` on submission_status events; rendered live in BuildLog. */
   buildLog?: string;
   error?: string;
   failedStage?: string;
@@ -69,7 +71,13 @@ interface LeaderboardState {
   addMetrics: (metric: MetricUpdate) => void;
   addAnomaly: (anomaly: AnomalyEvent) => void;
   addSubmission: (submission: Submission) => void;
-  updateSubmissionStatus: (id: string, status: Submission["status"], error?: string, failedStage?: string) => void;
+  updateSubmissionStatus: (
+    id: string,
+    status: Submission["status"],
+    error?: string,
+    failedStage?: string,
+    buildLog?: string,
+  ) => void;
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedEntry: (entry: LeaderboardEntry | null) => void;
@@ -127,7 +135,7 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
       return { submissions: [submission, ...state.submissions] };
     }),
 
-  updateSubmissionStatus: (id, status, error, failedStage) =>
+  updateSubmissionStatus: (id, status, error, failedStage, buildLog) =>
     set((state) => ({
       submissions: state.submissions.map((s) => {
         if (s.id === id) {
@@ -140,6 +148,7 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
             status,
             error: error ?? s.error,
             failedStage: calculatedFailedStage,
+            buildLog: buildLog ?? s.buildLog,
           };
         }
         return s;
