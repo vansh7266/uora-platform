@@ -28,9 +28,15 @@ function LatencyLineChart() {
       borderColor: "rgba(0,212,255,0.2)",
       borderWidth: 1,
       textStyle: { color: "#C9D1D9", fontFamily: "monospace", fontSize: 11 },
-      formatter: (params: { name: string; marker: string; seriesName: string; value: number }[]) => {
-        const t = new Date(params[0].name).toLocaleTimeString();
-        return `<div style="font-family:monospace;font-size:11px">${t}<br>${params.map(p => `${p.marker}${p.seriesName}: ${p.value.toFixed(3)}ms`).join("<br>")}</div>`;
+      formatter: (params: { name: string; marker: string; seriesName: string; value: number | string }[]) => {
+        const t = new Date(parseInt(params[0].name)).toLocaleTimeString();
+        const rows = params
+          .map((p) => {
+            const v = typeof p.value === "number" ? p.value : parseFloat(p.value as string);
+            return `${p.marker}${p.seriesName}: ${Number.isFinite(v) ? v.toFixed(3) : "—"}ms`;
+          })
+          .join("<br>");
+        return `<div style="font-family:monospace;font-size:11px">${t}<br>${rows}</div>`;
       },
     },
     legend: {
@@ -64,7 +70,7 @@ function LatencyLineChart() {
       {
         name: "P50",
         type: "line",
-        data: data.map((d) => d.p50.toFixed(3)),
+        data: data.map((d) => Number(d.p50.toFixed(3))),
         smooth: true,
         symbol: "none",
         lineStyle: { color: BID, width: 1.5 },
@@ -73,7 +79,7 @@ function LatencyLineChart() {
       {
         name: "P90",
         type: "line",
-        data: data.map((d) => d.p90.toFixed(3)),
+        data: data.map((d) => Number(d.p90.toFixed(3))),
         smooth: true,
         symbol: "none",
         lineStyle: { color: PLASMA, width: 1.5 },
@@ -82,7 +88,7 @@ function LatencyLineChart() {
       {
         name: "P99",
         type: "line",
-        data: data.map((d) => d.p99.toFixed(3)),
+        data: data.map((d) => Number(d.p99.toFixed(3))),
         smooth: true,
         symbol: "none",
         lineStyle: { color: ASK, width: 2 },
