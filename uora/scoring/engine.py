@@ -179,6 +179,8 @@ class ScoringEngine:
         *,
         features: Any | None = None,
         resource_penalty: float | None = None,
+        team: str | None = None,
+        language: str | None = None,
     ) -> dict:
         """
         Compute composite score for a submission.
@@ -331,14 +333,16 @@ class ScoringEngine:
             await conn.execute(
                 """
                 INSERT INTO benchmark_scores (
-                    time, submission_id, throughput, correctness_rate,
+                    time, submission_id, team, language, throughput, correctness_rate,
                     p50_latency_ns, p90_latency_ns, p99_latency_ns,
                     success_rate, error_rate, max_tps,
                     resource_penalty, composite_score, anomaly_score, status
                 )
-                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 """,
                 submission_id,
+                team,
+                language,
                 float(avg_throughput or 0),
                 float(correctness_rate or 0),
                 int(p50_latency or 0),

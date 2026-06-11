@@ -510,10 +510,22 @@ class BenchmarkWorker:
             # Resource penalty reported by the pipeline (the builder writes resources:{id}).
             resource_penalty = await self._read_resource_penalty(submission_id)
 
+            # Team is set by /api/v1/submit on the submission Redis hash. Pull it so
+            # benchmark_scores.team is populated (avoids "Team 16d15bcd"-style
+            # fallback labels on the leaderboard).
+            team_for_score: Optional[str] = None
+            try:
+                sub_meta = await self._redis.hgetall(f"submission:{submission_id}") if self._redis else {}
+                team_for_score = sub_meta.get("team")
+            except Exception:
+                team_for_score = None
+
             score = await engine.compute_score(
                 submission_id,
                 features=features,
                 resource_penalty=resource_penalty,
+                team=team_for_score,
+                language=language,
             )
 
             await self._update_status(submission_id, "scored", language=language)
