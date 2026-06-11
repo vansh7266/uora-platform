@@ -292,6 +292,11 @@ class LocalBuilder:
                         GROUP, CONSUMER, {STREAM: ">"}, count=1, block=BLOCK_MS,
                     )
                 except Exception as e:
+                    # Redis TimeoutError is a normal result of the BLOCK
+                    # window expiring with no messages – just loop.
+                    err_str = str(e)
+                    if "Timeout reading" in err_str or "TimeoutError" in type(e).__name__:
+                        continue
                     logger.exception("Redis read error: %s", e)
                     await asyncio.sleep(1)
                     continue

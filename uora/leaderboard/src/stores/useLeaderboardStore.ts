@@ -55,6 +55,7 @@ export interface Submission {
   buildLog?: string;
   error?: string;
   failedStage?: string;
+  targetUrl?: string;
 }
 
 interface LeaderboardState {

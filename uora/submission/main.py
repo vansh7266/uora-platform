@@ -618,6 +618,7 @@ async def get_status(submission_id: str, auth_data: dict = Depends(require_auth)
         "validating_at": data.get("validating_at"),
         "scored_at": data.get("scored_at"),
         "error": data.get("error"),
+        "target_url": data.get("target_url", ""),
     }
 
 
@@ -691,6 +692,7 @@ async def list_submissions(
             "scored_at": data.get("scored_at", ""),
             "error": data.get("error", ""),
             "build_log": data.get("build_log", ""),
+            "target_url": data.get("target_url", ""),
         })
 
     # Sort newest first based on queued_at

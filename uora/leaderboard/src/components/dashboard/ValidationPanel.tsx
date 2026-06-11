@@ -33,12 +33,15 @@ function cumulate(levels: SnapshotLevel[], descending = false): DepthLevel[] {
 function OrderbookDepthChart() {
   const [bids, setBids] = useState<DepthLevel[]>([]);
   const [asks, setAsks] = useState<DepthLevel[]>([]);
+  const { submissions } = useLeaderboardStore();
 
   useEffect(() => {
-    // The reference engine is the canonical LOB the validator scores against,
-    // exposed on :8081 for local dev. In production, set
-    // NEXT_PUBLIC_REFERENCE_ENGINE_URL.
+    // Prefer the live contestant engine while it is running, fall back to reference LOB.
+    const activeSubmission = submissions.find(
+      (s) => (s.status === "deployed" || s.status === "benchmarking") && s.targetUrl
+    );
     const refUrl =
+      (activeSubmission?.targetUrl) ||
       process.env.NEXT_PUBLIC_REFERENCE_ENGINE_URL ||
       "http://localhost:8081";
 
@@ -56,7 +59,8 @@ function OrderbookDepthChart() {
     fetchSnapshot();
     const id = setInterval(fetchSnapshot, 2000);
     return () => clearInterval(id);
-  }, []);
+  }, [submissions]);
+
 
   const allPrices = [...bids.map(([p]) => p), ...asks.map(([p]) => p)];
   const maxCum = Math.max(...bids.map(([, c]) => c), ...asks.map(([, c]) => c), 1);

@@ -615,7 +615,12 @@ class BenchmarkWorker:
                 await asyncio.sleep(5)
             except asyncio.CancelledError:
                 return
-            except Exception:
+            except Exception as exc:
+                # Redis TimeoutError is a normal result of the BLOCK window
+                # expiring with no messages — just loop silently.
+                err_str = str(exc)
+                if "Timeout reading" in err_str or "TimeoutError" in type(exc).__name__:
+                    continue
                 logger.exception("Unexpected benchmark worker error")
                 await asyncio.sleep(1)
 

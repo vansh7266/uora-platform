@@ -97,6 +97,7 @@ export default function DashboardPage() {
             submittedAt: item.queued_at ? new Date(item.queued_at).getTime() : Date.now(),
             error: item.error || undefined,
             buildLog: item.build_log || undefined,
+            targetUrl: item.target_url || undefined,
           }));
           
           // Sort newest first
