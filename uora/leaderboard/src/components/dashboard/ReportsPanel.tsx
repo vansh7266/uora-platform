@@ -1,17 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, FileText, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, FileText, Loader2 } from "lucide-react";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { useLeaderboardStore } from "@/stores/useLeaderboardStore";
 import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel";
-import { Badge, LanguageBadge } from "@/components/ui/Badge";
+import { LanguageBadge } from "@/components/ui/Badge";
 import { MetricKPI } from "@/components/ui/MetricKPI";
 
 export function ReportsPanel() {
   const { entries } = useLeaderboardStore();
+  const { isDemo } = useAuthStore();
   const [selected, setSelected] = useState<string>("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const entry = entries.find((e) => e.submission_id === selected) ?? entries[0];
+
+  const handleDownload = async () => {
+    if (!entry) return;
+    setDownloadError(null);
+    if (isDemo) {
+      setDownloadError("PDF reports are only available for real submissions.");
+      return;
+    }
+    setDownloading(true);
+    try {
+      const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${api}/api/v1/report/${entry.submission_id}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || `Download failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `uora-report-${entry.team.toLowerCase().replace(/\s+/g, "_")}-${entry.submission_id.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (!entries.length) {
     return (
@@ -129,23 +166,55 @@ export function ReportsPanel() {
               </p>
             </div>
 
-            {/* Report status */}
-            <div className="mt-4 flex items-start gap-3 p-3.5 rounded bg-[var(--void-800)] border border-[rgba(255,255,255,0.05)]">
-              {entry.status === "scored" ? (
-                <CheckCircle2 className="w-4 h-4 text-[var(--bid)] flex-shrink-0 mt-0.5" />
-              ) : (
-                <Loader2 className="w-4 h-4 text-[var(--ink-500)] flex-shrink-0 mt-0.5 animate-spin" />
-              )}
-              <div>
-                <p className="text-[11px] font-mono font-semibold" style={{ color: entry.status === "scored" ? "var(--bid)" : "var(--ink-300)" }}>
-                  {entry.status === "scored" ? "PDF report ready" : `Awaiting scoring · ${entry.status.toUpperCase()}`}
-                </p>
-                <p className="text-[10px] font-mono text-[var(--ink-500)] mt-0.5">
-                  {entry.status === "scored"
-                    ? "Score artifacts indexed. Contact admin to export full compliance PDF."
-                    : "Report generated automatically after scoring pipeline completes."}
-                </p>
+            {/* Report download */}
+            <div className="mt-4 p-3.5 rounded bg-[var(--void-800)] border border-[rgba(255,255,255,0.05)]">
+              <div className="flex items-start gap-3 mb-3">
+                {entry.status === "scored" ? (
+                  <CheckCircle2 className="w-4 h-4 text-[var(--bid)] flex-shrink-0 mt-0.5" />
+                ) : (
+                  <Loader2 className="w-4 h-4 text-[var(--ink-500)] flex-shrink-0 mt-0.5 animate-spin" />
+                )}
+                <div className="flex-1">
+                  <p
+                    className="text-[11px] font-mono font-semibold"
+                    style={{ color: entry.status === "scored" ? "var(--bid)" : "var(--ink-300)" }}
+                  >
+                    {entry.status === "scored" ? "PDF report ready" : `Awaiting scoring · ${entry.status.toUpperCase()}`}
+                  </p>
+                  <p className="text-[10px] font-mono text-[var(--ink-500)] mt-0.5">
+                    {entry.status === "scored"
+                      ? "Full performance audit with telemetry matrix, validation summary, and score breakdown."
+                      : "Report is generated automatically once scoring completes."}
+                  </p>
+                </div>
               </div>
+
+              {entry.status === "scored" && (
+                <button
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="btn-plasma w-full text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {downloading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Preparing PDF…
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5" />
+                      Download PDF Report
+                    </>
+                  )}
+                </button>
+              )}
+
+              {downloadError && (
+                <div className="mt-2.5 flex items-start gap-2 p-2.5 rounded bg-[rgba(234,57,67,0.06)] border border-[rgba(234,57,67,0.2)]">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5 text-[var(--ask)]" />
+                  <p className="text-[10px] font-mono text-[var(--ask)] leading-relaxed">{downloadError}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
