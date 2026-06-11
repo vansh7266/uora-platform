@@ -39,8 +39,16 @@ export default function DashboardPage() {
   const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
 
   const { isAuthenticated, isLoading, isDemo, login } = useAuthStore();
-  const { entries, submissions, setEntries, addMetrics, addAnomaly, addSubmission, reset: resetLeaderboard } =
-    useLeaderboardStore();
+  const {
+    entries,
+    submissions,
+    setEntries,
+    addMetrics,
+    addAnomaly,
+    addSubmission,
+    setSubmissions,
+    reset: resetLeaderboard,
+  } = useLeaderboardStore();
 
   // SSE for real users
   useSSE(isDemo ? "" : "/api/leaderboard");
@@ -65,6 +73,50 @@ export default function DashboardPage() {
       resetLeaderboard();
     }
   }, [isDemo, setEntries, addMetrics, addAnomaly, addSubmission, resetLeaderboard]);
+
+  // Poll real submissions from backend when in real mode
+  useEffect(() => {
+    if (isDemo) return;
+
+    let active = true;
+
+    async function fetchSubmissions() {
+      try {
+        const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const res = await fetch(`${api}/api/v1/submissions`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        
+        if (data.submissions) {
+          const mapped = data.submissions.map((item: any) => ({
+            id: item.submission_id,
+            team: item.team || "Unknown",
+            language: item.language || "cpp",
+            status: item.status || "queued",
+            submittedAt: item.queued_at ? new Date(item.queued_at).getTime() : Date.now(),
+            error: item.error || undefined,
+            buildLog: item.build_log || undefined,
+          }));
+          
+          // Sort newest first
+          mapped.sort((a: any, b: any) => b.submittedAt - a.submittedAt);
+          
+          setSubmissions(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to fetch submissions", err);
+      }
+    }
+
+    fetchSubmissions();
+    const interval = setInterval(fetchSubmissions, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [isDemo, setSubmissions]);
 
   // Auth guard
   useEffect(() => {

@@ -19,6 +19,7 @@ export interface LeaderboardEntry {
   status: "running" | "completed" | "scored" | "failed";
   anomaly_score: number;
   anomaly_type?: string;
+  submitted_at?: number;
 }
 
 export interface MetricUpdate {
@@ -71,6 +72,7 @@ interface LeaderboardState {
   addMetrics: (metric: MetricUpdate) => void;
   addAnomaly: (anomaly: AnomalyEvent) => void;
   addSubmission: (submission: Submission) => void;
+  setSubmissions: (submissions: Submission[]) => void;
   updateSubmissionStatus: (
     id: string,
     status: Submission["status"],
@@ -134,6 +136,8 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
       if (state.submissions.some((s) => s.id === submission.id)) return state;
       return { submissions: [submission, ...state.submissions] };
     }),
+
+  setSubmissions: (submissions) => set({ submissions }),
 
   updateSubmissionStatus: (id, status, error, failedStage, buildLog) =>
     set((state) => ({

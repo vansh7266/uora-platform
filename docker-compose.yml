@@ -93,6 +93,7 @@ services:
       - MAX_UPLOAD_SIZE=52428800
     volumes:
       - ./uploads:/app/uploads
+      - reports:/tmp/uora-reports
     depends_on:
       minio:
         condition: service_healthy
@@ -201,6 +202,8 @@ services:
       - BENCHMARK_WORKER_COUNT=${BENCHMARK_WORKER_COUNT:-50}
       - BENCHMARK_DURATION_SEC=${BENCHMARK_DURATION_SEC:-10}
       - BENCHMARK_MIN_SUCCESS_RATE=${BENCHMARK_MIN_SUCCESS_RATE:-0.01}
+    volumes:
+      - reports:/tmp/uora-reports
     depends_on:
       redis:
         condition: service_healthy
@@ -322,3 +325,4 @@ volumes:
   buildkit_cache:
   registry_data:
   telemetry_logs:
+  reports:

@@ -177,9 +177,6 @@ def _compile(language: str, work_dir: Path) -> tuple[list[str], str]:
         if not cpp_files:
             raise RuntimeError("No .cpp source found")
 
-        # Provide common headers (httplib.h) automatically if missing — lets
-        # contestants upload a single .cpp that includes "httplib.h" without
-        # bundling the 700KB header themselves.
         examples_root = Path(__file__).resolve().parents[2] / "examples"
         for header in ("httplib.h",):
             src = examples_root / header
@@ -201,7 +198,8 @@ def _compile(language: str, work_dir: Path) -> tuple[list[str], str]:
         if proc.stderr:
             log_lines.append(proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"g++ failed (exit {proc.returncode})")
+            build_log = "\n".join(log_lines)
+            raise RuntimeError(f"g++ failed (exit {proc.returncode}):\n{build_log}")
         log_lines.append("✓ compile succeeded")
         return [str(binary)], "\n".join(log_lines)
 
@@ -217,7 +215,8 @@ def _compile(language: str, work_dir: Path) -> tuple[list[str], str]:
         if proc.stderr:
             log_lines.append(proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"go build failed (exit {proc.returncode})")
+            build_log = "\n".join(log_lines)
+            raise RuntimeError(f"go build failed (exit {proc.returncode}):\n{build_log}")
         return [str(binary)], "\n".join(log_lines)
 
     if language == "rust":
@@ -225,11 +224,12 @@ def _compile(language: str, work_dir: Path) -> tuple[list[str], str]:
             raise RuntimeError("`cargo` not on PATH")
         log_lines.append("$ cargo build --release")
         proc = subprocess.run(["cargo", "build", "--release"], cwd=work_dir,
-                              capture_output=True, text=True, timeout=BUILD_TIMEOUT_SEC)
+                               capture_output=True, text=True, timeout=BUILD_TIMEOUT_SEC)
         if proc.stderr:
             log_lines.append(proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"cargo build failed (exit {proc.returncode})")
+            build_log = "\n".join(log_lines)
+            raise RuntimeError(f"cargo build failed (exit {proc.returncode}):\n{build_log}")
         # Find the produced binary
         for cand in (work_dir / "target/release").iterdir():
             if cand.is_file() and os.access(cand, os.X_OK):
@@ -340,9 +340,20 @@ class LocalBuilder:
 
             # 4. Health check
             if not await _wait_for_health(port):
+                proc.poll()
+                startup_log = ""
+                if proc.returncode is not None:
+                    try:
+                        out, _ = proc.communicate(timeout=1.0)
+                        startup_log = out.decode(errors="replace")
+                    except Exception:
+                        pass
                 engine.terminate()
                 _running.pop(sub_id, None)
-                raise RuntimeError(f"engine did not become healthy on port {port}")
+                err_msg = f"engine did not become healthy on port {port}"
+                if startup_log:
+                    err_msg += f". Startup logs:\n{startup_log}"
+                raise RuntimeError(err_msg)
 
             target_url = f"http://127.0.0.1:{port}"
             logger.info("[%s] deployed at %s", sub_id, target_url)
@@ -359,7 +370,10 @@ class LocalBuilder:
 
         except Exception as exc:
             logger.exception("[%s] build pipeline failed", sub_id)
-            await self._set_status(sub_id, "failed", error=str(exc)[:500])
+            build_log = None
+            if "failed" in str(exc) or "exit" in str(exc) or "healthy" in str(exc):
+                build_log = str(exc)
+            await self._set_status(sub_id, "failed", error=str(exc)[:500], build_log=build_log)
         finally:
             await self._redis.xack(STREAM, GROUP, entry_id)
 

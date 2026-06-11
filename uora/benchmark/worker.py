@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import signal
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -435,6 +436,45 @@ class BenchmarkWorker:
                 )
             )
 
+            benchmark_done = asyncio.Event()
+
+            async def publish_metrics_periodically():
+                last_index = 0
+                last_time = time.time()
+                while not benchmark_done.is_set():
+                    try:
+                        await asyncio.sleep(1.0)
+                        records = coordinator._records[last_index:]
+                        if not records:
+                            continue
+                        last_index += len(records)
+                        
+                        now = time.time()
+                        elapsed = now - last_time
+                        last_time = now
+                        if elapsed <= 0:
+                            elapsed = 0.001
+                            
+                        latencies = sorted([r["latency_ns"] / 1_000_000 for r in records])
+                        n = len(latencies)
+                        p50 = latencies[min(int(n * 0.50), n - 1)] if n > 0 else 0.0
+                        p90 = latencies[min(int(n * 0.90), n - 1)] if n > 0 else 0.0
+                        p99 = latencies[min(int(n * 0.99), n - 1)] if n > 0 else 0.0
+                        tps = len(records) / elapsed
+                        
+                        await self._publish({
+                            "type": "metrics",
+                            "timestamp": int(now * 1000),
+                            "p50": round(p50, 4),
+                            "p90": round(p90, 4),
+                            "p99": round(p99, 4),
+                            "throughput": round(tps, 2),
+                        })
+                    except Exception as e:
+                        logger.warning("Error publishing periodic metrics: %s", e)
+
+            metrics_task = asyncio.create_task(publish_metrics_periodically())
+
             try:
                 await coordinator.start(
                     target_url,
@@ -453,6 +493,12 @@ class BenchmarkWorker:
                 await coordinator.run_benchmark(DURATION_SEC)
                 results = await coordinator.get_results()
             finally:
+                benchmark_done.set()
+                metrics_task.cancel()
+                try:
+                    await metrics_task
+                except asyncio.CancelledError:
+                    pass
                 await coordinator.stop()
 
             # Collect the resource penalty that was sampled during the run.
@@ -529,6 +575,17 @@ class BenchmarkWorker:
             )
 
             await self._update_status(submission_id, "scored", language=language)
+            
+            # If an anomaly is flagged, publish it to Redis
+            if score.get("anomaly", {}).get("is_anomaly"):
+                await self._publish({
+                    "type": "anomaly",
+                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "score": float(score["anomaly"]["score"]),
+                    "anomaly_type": str(score["anomaly"]["reason"]),
+                    "team": team_for_score or f"Team {submission_id[:8]}",
+                })
+
             leaderboard = await engine.get_leaderboard(limit=20)
             await self._publish({"type": "benchmark_complete", "submission_id": submission_id, "score": score})
             await self._publish({"type": "leaderboard", "entries": leaderboard})

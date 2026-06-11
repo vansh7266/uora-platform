@@ -49,6 +49,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY uora/__init__.py ./uora/__init__.py
 COPY uora/sandbox/__init__.py ./uora/sandbox/__init__.py
 COPY uora/sandbox/builder.py ./uora/sandbox/builder.py
+COPY examples ./examples
 
 # Run as non-root
 USER uora

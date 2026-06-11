@@ -693,14 +693,14 @@ async def stream_leaderboard(request: Request):
                     SELECT submission_id, team, language, status, composite_score,
                            p50_latency_ns, p90_latency_ns, p99_latency_ns,
                            throughput, max_tps, success_rate, error_rate,
-                           correctness_rate, anomaly_score,
+                           correctness_rate, anomaly_score, time,
                            ROW_NUMBER() OVER(PARTITION BY submission_id ORDER BY time DESC) as rn
                     FROM benchmark_scores
                 )
                 SELECT submission_id, team, language, status, composite_score,
                        p50_latency_ns, p90_latency_ns, p99_latency_ns,
                        throughput, max_tps, success_rate, error_rate,
-                       correctness_rate, anomaly_score
+                       correctness_rate, anomaly_score, time
                 FROM latest_scores
                 WHERE rn = 1
                 ORDER BY composite_score DESC
@@ -736,6 +736,7 @@ async def stream_leaderboard(request: Request):
                 "error_rate": round(float(row["error_rate"] or 0), 4),
                 "anomaly_score": round(float(row["anomaly_score"] or 0), 4),
                 "status": row["status"] or "scored",
+                "submitted_at": int(row["time"].timestamp() * 1000) if row["time"] else 0,
             })
         return entries
 

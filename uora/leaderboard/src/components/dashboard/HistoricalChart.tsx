@@ -34,10 +34,11 @@ export function HistoricalChart() {
   const buildRealSeries = (team: string, colorIdx: number) => {
     const teamEntries = entries.filter((e) => e.team === team);
     if (teamEntries.length === 0) return null;
+    const sortedEntries = teamEntries.slice().sort((a, b) => (a.submitted_at || 0) - (b.submitted_at || 0));
     return {
       name: team,
       type: "line",
-      data: teamEntries.map((e) => parseFloat(e.composite_score.toFixed(2))),
+      data: sortedEntries.map((e) => parseFloat(e.composite_score.toFixed(2))),
       smooth: true,
       symbol: "circle",
       symbolSize: 6,

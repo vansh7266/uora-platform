@@ -24,6 +24,7 @@ import functools
 import json
 import logging
 import os
+import shutil
 import signal
 import string
 import subprocess
@@ -113,7 +114,7 @@ BENCHMARK_STREAM_NAME: Final = "benchmark_queue"
 BLOCK_MS: Final = 5000  # milliseconds to block on XREADGROUP
 CONSUMER_ID: Final = f"builder-{uuid.uuid4().hex[:8]}"
 
-SUPPORTED_LANGUAGES: Final = frozenset({"cpp", "rust", "go"})
+SUPPORTED_LANGUAGES: Final = frozenset({"cpp", "rust", "go", "python"})
 
 
 def require_setting(name: str, value: str | None) -> str:
@@ -438,6 +439,7 @@ class SandboxBuilder:
         pod_name: str | None = None,
         service_name: str | None = None,
         target_url: str | None = None,
+        build_log: str | None = None,
     ) -> None:
         """Write current build status to the Redis hash for this submission."""
         assert self._redis is not None, "Redis not initialized"
@@ -456,6 +458,8 @@ class SandboxBuilder:
             fields["service_name"] = service_name
         if target_url is not None:
             fields["target_url"] = target_url
+        if build_log is not None:
+            fields["build_log"] = build_log
 
         # Timestamped milestone
         milestone_key = f"{status}_at"
@@ -472,6 +476,7 @@ class SandboxBuilder:
                     "status": status,
                     "error": error,
                     "updated_at": fields["updated_at"],
+                    "build_log": build_log,
                 }),
             )
         except Exception as exc:
@@ -568,47 +573,132 @@ class SandboxBuilder:
         source_dir = dest_dir / "src"
         source_dir.mkdir()
 
-        if not source_name.endswith((".tar.gz", ".tgz")):
-            target_path = source_dir / source_name
-            download_path.replace(target_path)
+        # Sniff magic bytes
+        with open(download_path, "rb") as f:
+            head = f.read(262)
+
+        import zipfile
+        import tarfile
+
+        extracted = False
+
+        # gzip magic 1f 8b — likely .tar.gz
+        if head[:2] == b"\x1f\x8b":
+            try:
+                with tarfile.open(download_path, mode="r:gz") as tar:
+                    source_dir_resolved = source_dir.resolve()
+                    for member in tar.getmembers():
+                        if member.name.startswith("/") or ".." in member.name or member.name.startswith("\\"):
+                            raise RuntimeError(f"Path traversal attempt detected in archive: {member.name}")
+                        member_path = (source_dir / member.name).resolve()
+                        try:
+                            member_path.relative_to(source_dir_resolved)
+                        except ValueError:
+                            raise RuntimeError(f"Path traversal attempt detected: {member.name}")
+                    tar.extractall(source_dir)
+                logger.info("Programmatically extracted tar.gz → %s", source_dir)
+                extracted = True
+            except Exception as e:
+                logger.warning("Failed to extract as tar.gz, falling back: %s", e)
+
+        # tar magic at offset 257: "ustar"
+        if not extracted and len(head) > 262 and head[257:262] == b"ustar":
+            try:
+                with tarfile.open(download_path, mode="r:") as tar:
+                    source_dir_resolved = source_dir.resolve()
+                    for member in tar.getmembers():
+                        if member.name.startswith("/") or ".." in member.name or member.name.startswith("\\"):
+                            raise RuntimeError(f"Path traversal attempt detected in archive: {member.name}")
+                        member_path = (source_dir / member.name).resolve()
+                        try:
+                            member_path.relative_to(source_dir_resolved)
+                        except ValueError:
+                            raise RuntimeError(f"Path traversal attempt detected: {member.name}")
+                    tar.extractall(source_dir)
+                logger.info("Programmatically extracted tar → %s", source_dir)
+                extracted = True
+            except Exception as e:
+                logger.warning("Failed to extract as tar, falling back: %s", e)
+
+        # zip magic PK\x03\x04
+        if not extracted and head[:4] == b"PK\x03\x04":
+            try:
+                with zipfile.ZipFile(download_path) as zf:
+                    source_dir_resolved = source_dir.resolve()
+                    for member in zf.namelist():
+                        if member.startswith("/") or ".." in member or member.startswith("\\"):
+                            raise RuntimeError(f"Path traversal attempt detected in archive: {member}")
+                        member_path = (source_dir / member).resolve()
+                        try:
+                            member_path.relative_to(source_dir_resolved)
+                        except ValueError:
+                            raise RuntimeError(f"Path traversal attempt detected: {member}")
+                    zf.extractall(source_dir)
+                logger.info("Programmatically extracted zip → %s", source_dir)
+                extracted = True
+            except Exception as e:
+                logger.warning("Failed to extract as zip, falling back: %s", e)
+
+        if not extracted:
+            # Raw single file
+            ext = s3_key.rsplit(".", 1)[-1] if "." in s3_key else "txt"
+            target_path = source_dir / f"source.{ext}"
+            shutil.copy2(download_path, target_path)
             logger.info("Prepared single-file source at %s", target_path)
-            return source_dir
 
-        # Validate archive members to prevent path traversal and symlink attacks
-        rc, stdout, _ = await self._run_cmd("tar", "-tzf", str(download_path), timeout=30.0)
-        if rc == 0:
-            source_dir_resolved = source_dir.resolve()
-            for member in stdout.decode().splitlines():
-                # Check for absolute paths and path traversal sequences
-                if member.startswith("/") or ".." in member or member.startswith("\\"):
-                    raise RuntimeError(f"Path traversal attempt detected in archive: {member}")
-                
-                # Resolve the member path relative to extraction directory
-                member_path = (source_dir / member).resolve()
-                
-                # Ensure the resolved path is within the extraction directory
-                try:
-                    member_path.relative_to(source_dir_resolved)
-                except ValueError:
-                    raise RuntimeError(f"Path traversal attempt detected (resolved outside extraction dir): {member}")
-
-        # Extract archive uploads securely with additional hardening
-        rc, _, stderr = await self._run_cmd(
-            "tar", "-xzf", str(download_path), "-C", str(source_dir),
-            "--no-same-owner", "--no-same-permissions",
-            "--strip-components=0",  # Don't strip any path components
-            timeout=60.0,
+        # Copy httplib.h if we have C++ files and httplib.h is missing
+        cpp_files = (
+            list(source_dir.glob("**/*.cpp"))
+            + list(source_dir.glob("**/*.cc"))
+            + list(source_dir.glob("**/*.cxx"))
+            + list(source_dir.glob("**/*.h"))
+            + list(source_dir.glob("**/*.hpp"))
         )
-        if rc != 0:
-            raise RuntimeError(f"tar extraction failed (rc={rc}): {stderr.decode().strip()}")
+        if cpp_files:
+            has_httplib = any(f.name == "httplib.h" for f in cpp_files)
+            if not has_httplib:
+                examples_paths = [
+                    Path("/app/examples/httplib.h"),
+                    Path(__file__).resolve().parents[2] / "examples" / "httplib.h"
+                ]
+                for ep in examples_paths:
+                    if ep.is_file():
+                        shutil.copy2(ep, source_dir / "httplib.h")
+                        logger.info("Automatically provided missing httplib.h from %s", ep)
+                        break
 
-        logger.info("Extracted source to %s", source_dir)
         return source_dir
 
     # ── Docker build ────────────────────────────────────────────────────
 
-    def _generate_dockerfile(self, language: str) -> str:
+    def _generate_dockerfile(self, language: str, source_dir: Path) -> str:
         """Return a multi-stage Dockerfile for the given language."""
+        if language == "python":
+            py_files = sorted(source_dir.glob("**/*.py"))
+            # filter out macos double/dotfiles
+            py_files = [p for p in py_files if not p.name.startswith("._") and not p.name.startswith(".")]
+            if not py_files:
+                raise ValueError("No .py source found in submission")
+            # find entrypoint
+            entry = next(
+                (p for p in py_files if any(k in p.name.lower() for k in ("engine", "main", "server"))),
+                py_files[0],
+            )
+            # Make the entry relative to source_dir
+            rel_entry = entry.relative_to(source_dir)
+            
+            # Check if requirements.txt exists to install dependencies
+            req_step = "RUN pip install --no-cache-dir -r requirements.txt" if (source_dir / "requirements.txt").is_file() else "# no requirements.txt"
+            
+            return f"""\
+FROM python:3.11-slim
+WORKDIR /app
+COPY . /app
+{req_step}
+EXPOSE 8080
+ENV PORT=8080
+ENTRYPOINT ["python", "-u", "{rel_entry}"]
+"""
         try:
             return DOCKERFILE_MAP[language]
         except KeyError:
@@ -619,15 +709,15 @@ class SandboxBuilder:
         source_dir: Path,
         language: str,
         submission_id: str,
-    ) -> str:
+    ) -> tuple[str, str]:
         """Build a Docker image from the source directory.
 
         Uses ``docker buildx build`` with ``--network=none`` and ``--no-cache``
         for hermetic, reproducible builds.
 
-        Returns the full image tag (e.g. ``localhost:5000/uora/sub-abc:latest``).
+        Returns (image_tag, build_log).
         """
-        dockerfile_content = self._generate_dockerfile(language)
+        dockerfile_content = self._generate_dockerfile(language, source_dir)
         dockerfile_path = source_dir / "Dockerfile"
         dockerfile_path.write_text(dockerfile_content)
 
@@ -649,9 +739,9 @@ class SandboxBuilder:
         logger.info("Building and pushing image %s (lang=%s)", image_tag, language)
 
         rc, _, stderr = await self._run_cmd(*cmd, timeout=float(BUILD_TIMEOUT))
+        build_log = stderr.decode(errors="replace")
 
         if rc != 0:
-            build_log = stderr.decode(errors="replace")
             # Log full error for debugging, but show truncated in exception
             logger.error("BuildKit build failed (rc=%d). Full stderr:\n%s", rc, build_log)
             truncated_log = build_log[-4096:] if len(build_log) > 4096 else build_log
@@ -660,7 +750,7 @@ class SandboxBuilder:
             )
 
         logger.info("Built and pushed image %s successfully", image_tag)
-        return image_tag
+        return image_tag, build_log
 
     # ── Registry push ──────────────────────────────────────────────────
 
@@ -894,8 +984,8 @@ class SandboxBuilder:
             source_dir = await self._download_source(s3_key, work_dir)
 
             # Build
-            image_tag = await self._build_image(source_dir, language, submission_id)
-            await self._update_status(submission_id, "built", image=image_tag)
+            image_tag, build_log = await self._build_image(source_dir, language, submission_id)
+            await self._update_status(submission_id, "built", image=image_tag, build_log=build_log)
             await self._record_build_event(submission_id, "built", f"Image: {image_tag}")
 
             # Push
@@ -921,7 +1011,7 @@ class SandboxBuilder:
 
         except Exception as exc:
             logger.exception("Build pipeline failed for submission %s", submission_id)
-            await self._update_status(submission_id, "failed", error=str(exc))
+            await self._update_status(submission_id, "failed", error=str(exc), build_log=str(exc))
             await self._record_build_event(submission_id, "failed", str(exc))
 
         finally:

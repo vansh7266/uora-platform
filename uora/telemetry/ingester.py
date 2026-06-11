@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import time
+import redis.asyncio as aioredis
 from collections import deque
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -57,6 +58,9 @@ class TelemetryIngester:
         db_name: str = "uora_metrics",
         batch_size: int = 100,
         flush_interval_ms: float = 1000.0,
+        redis_host: str = "redis",
+        redis_port: int = 6379,
+        redis_password: str | None = None,
     ):
         self.db_host = db_host
         self.db_port = db_port
@@ -65,8 +69,13 @@ class TelemetryIngester:
         self.db_name = db_name
         self.batch_size = batch_size
         self.flush_interval_ms = flush_interval_ms
+        self.redis_host = redis_host
+        self.redis_port = redis_port
+        self.redis_password = redis_password
 
         self._pool: Optional[Any] = None
+        self._redis: Optional[aioredis.Redis] = None
+        self._last_flush_time = time.time()
         self._buffer: list[dict] = []
         self._dead_letter: deque[dict] = deque(maxlen=10_000)
         self._flush_retries: dict[str, int] = {}  # record hash -> retry count
@@ -91,6 +100,20 @@ class TelemetryIngester:
             await ensure_timescale_schema(conn)
         print(f"✓ Connected to TimescaleDB at {self.db_host}:{self.db_port}")
 
+        # Connect to Redis
+        try:
+            self._redis = aioredis.Redis(
+                host=self.redis_host,
+                port=self.redis_port,
+                password=self.redis_password if self.redis_password else None,
+                decode_responses=True,
+            )
+            await self._redis.ping()
+            print(f"✓ Connected to Redis at {self.redis_host}:{self.redis_port}")
+        except Exception as exc:
+            logger.warning("Failed to connect to Redis: %s", exc)
+            self._redis = None
+
     async def stop(self) -> None:
         """Flush remaining buffer and close pool."""
         self._running = False
@@ -98,6 +121,8 @@ class TelemetryIngester:
             await self._flush()
         if self._pool:
             await self._pool.close()
+        if self._redis:
+            await self._redis.close()
 
     @property
     def dead_letter_count(self) -> int:
@@ -152,39 +177,69 @@ class TelemetryIngester:
             await self.ingest_log_line(line)
 
     async def _flush(self) -> None:
-        """Batch insert buffered records into TimescaleDB."""
-        if not self._buffer or not self._pool:
+        """Batch insert buffered records into TimescaleDB and publish metrics to Redis."""
+        if not self._buffer:
             return
 
         records = self._buffer
         self._buffer = []
 
         try:
-            async with self._pool.acquire() as conn:
-                await conn.executemany(
-                    """
-                    INSERT INTO latency_events (time, submission_id, bot_id, order_id, endpoint, latency_ns, status_code, success)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    """,
-                    [
-                        (
-                            r["time"],
-                            r["submission_id"],
-                            r["bot_id"],
-                            r["order_id"],
-                            r["endpoint"],
-                            r["latency_ns"],
-                            r["status_code"],
-                            r["success"],
-                        )
-                        for r in records
-                    ],
-                )
-            # Flush succeeded — clear retry counters for these records
-            for r in records:
-                rhash = self._record_hash(r)
-                self._flush_retries.pop(rhash, None)
-            logger.info("Flushed %d records to TimescaleDB", len(records))
+            if self._pool:
+                async with self._pool.acquire() as conn:
+                    await conn.executemany(
+                        """
+                        INSERT INTO latency_events (time, submission_id, bot_id, order_id, endpoint, latency_ns, status_code, success)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        """,
+                        [
+                            (
+                                r["time"],
+                                r["submission_id"],
+                                r["bot_id"],
+                                r["order_id"],
+                                r["endpoint"],
+                                r["latency_ns"],
+                                r["status_code"],
+                                r["success"],
+                            )
+                            for r in records
+                        ],
+                    )
+                # Flush succeeded — clear retry counters for these records
+                for r in records:
+                    rhash = self._record_hash(r)
+                    self._flush_retries.pop(rhash, None)
+                logger.info("Flushed %d records to TimescaleDB", len(records))
+
+            # Compute real-time percentiles and throughput and publish to Redis
+            if self._redis:
+                try:
+                    latencies = sorted([r["latency_ns"] / 1_000_000 for r in records])
+                    n = len(latencies)
+                    p50 = latencies[min(int(n * 0.50), n - 1)] if n > 0 else 0.0
+                    p90 = latencies[min(int(n * 0.90), n - 1)] if n > 0 else 0.0
+                    p99 = latencies[min(int(n * 0.99), n - 1)] if n > 0 else 0.0
+                    
+                    now = time.time()
+                    duration = now - self._last_flush_time
+                    self._last_flush_time = now
+                    duration = max(duration, 0.001)
+                    throughput = len(records) / duration
+
+                    await self._redis.publish(
+                        "uora:leaderboard:updates",
+                        json.dumps({
+                            "type": "metrics",
+                            "timestamp": int(now * 1000),
+                            "p50": round(p50, 4),
+                            "p90": round(p90, 4),
+                            "p99": round(p99, 4),
+                            "throughput": round(throughput, 2),
+                        })
+                    )
+                except Exception as redis_exc:
+                    logger.warning("Failed to publish metrics to Redis: %s", redis_exc)
         except Exception as e:
             logger.error("Flush failed (%d records): %s", len(records), e)
             # Route records: retry up to 3 times, then dead-letter queue
@@ -236,6 +291,24 @@ class TelemetryIngester:
             await asyncio.sleep(self.flush_interval_ms / 1000.0)
             if self._buffer:
                 await self._flush()
+            else:
+                if self._redis:
+                    try:
+                        now = time.time()
+                        self._last_flush_time = now
+                        await self._redis.publish(
+                            "uora:leaderboard:updates",
+                            json.dumps({
+                                "type": "metrics",
+                                "timestamp": int(now * 1000),
+                                "p50": 0.0,
+                                "p90": 0.0,
+                                "p99": 0.0,
+                                "throughput": 0.0,
+                            })
+                        )
+                    except Exception as exc:
+                        logger.warning("Failed to publish zero metrics to Redis: %s", exc)
 
     async def tail_access_log(self, path: str, *, from_start: bool = False) -> None:
         """Tail an Envoy access log file and ingest lines as they are written."""
@@ -264,6 +337,9 @@ async def main():
         db_user=os.getenv("DB_USER", "uora"),
         db_password=os.getenv("DB_PASSWORD"),
         db_name=os.getenv("DB_NAME", "uora_metrics"),
+        redis_host=os.getenv("REDIS_HOST", "redis"),
+        redis_port=int(os.getenv("REDIS_PORT", "6379")),
+        redis_password=os.getenv("REDIS_PASSWORD"),
     )
 
     access_log_path = os.getenv("ENVOY_ACCESS_LOG")
