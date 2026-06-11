@@ -660,23 +660,45 @@ async def list_submissions(
     limit: int = 20, offset: int = 0,
     auth_data: dict = Depends(require_auth),
 ):
-    """List recent submission IDs (for admin/debug)."""
+    """List recent submission IDs for the authenticated team."""
     if not redis_pool:
         raise HTTPException(503, "Service temporarily unavailable")
 
+    user_team = auth_data.get("payload", {}).get("team") if auth_data.get("source") == "session" else None
+
     # Scan Redis for submission keys
     keys = []
-    async for key in redis_pool.scan_iter(match="submission:*", count=100):
+    async for key in redis_pool.scan_iter(match="submission:*", count=500):
         keys.append(key.decode() if isinstance(key, bytes) else key)
 
-    keys = keys[offset:offset + limit]
     results = []
     for key in keys:
         data = await redis_pool.hgetall(key)
+        # Filter by team to ensure contestants only see their own submissions
+        if user_team and data.get("team") != user_team:
+            continue
         sid = key.replace("submission:", "")
-        results.append({"submission_id": sid, **data})
+        results.append({
+            "submission_id": sid,
+            "team": data.get("team", ""),
+            "language": data.get("language", ""),
+            "status": data.get("status", ""),
+            "queued_at": data.get("queued_at", ""),
+            "built_at": data.get("built_at", ""),
+            "deployed_at": data.get("deployed_at", ""),
+            "benchmarking_at": data.get("benchmarking_at", ""),
+            "validating_at": data.get("validating_at", ""),
+            "scored_at": data.get("scored_at", ""),
+            "error": data.get("error", ""),
+            "build_log": data.get("build_log", ""),
+        })
 
-    return {"submissions": results, "count": len(results)}
+    # Sort newest first based on queued_at
+    results.sort(key=lambda x: x.get("queued_at", ""), reverse=True)
+    
+    paginated = results[offset:offset + limit]
+    return {"submissions": paginated, "count": len(results)}
+
 
 
 @app.get("/api/v1/leaderboard")

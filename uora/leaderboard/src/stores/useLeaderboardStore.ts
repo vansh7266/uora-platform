@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useAuthStore } from "./useAuthStore";
 
 export interface LeaderboardEntry {
   rank: number;
@@ -51,8 +52,6 @@ export interface Submission {
     | "scored"
     | "failed";
   submittedAt: number;
-  /** Compiler/interpreter output captured by the builder. Streamed in as
-   *  `build_log` on submission_status events; rendered live in BuildLog. */
   buildLog?: string;
   error?: string;
   failedStage?: string;
@@ -83,8 +82,6 @@ interface LeaderboardState {
   setConnected: (connected: boolean) => void;
   setError: (error: string | null) => void;
   setSelectedEntry: (entry: LeaderboardEntry | null) => void;
-  /** Wipe everything in the store. Called on sign-out so demo data never
-   *  leaks into a subsequent real session, and vice-versa. */
   reset: () => void;
 }
 
@@ -99,8 +96,16 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
   lastUpdated: null,
 
   setEntries: (entries) => {
+    const auth = useAuthStore.getState();
+    const userTeam = (!auth.isDemo && auth.user?.team) ? auth.user.team : null;
+
+    // Filter to only show their own team's entries when logged in (real session)
+    const filtered = userTeam
+      ? entries.filter((e) => e.team === userTeam)
+      : entries;
+
     const prevEntries = get().entries;
-    const enrichedEntries = entries
+    const enrichedEntries = filtered
       .slice()
       .sort((a, b) => b.composite_score - a.composite_score)
       .map((entry, index) => ({ ...entry, rank: index + 1 }))
@@ -126,18 +131,44 @@ export const useLeaderboardStore = create<LeaderboardState>()((set, get) => ({
     })),
 
   addAnomaly: (anomaly) =>
-    set((state) => ({
-      anomalies: [...state.anomalies.slice(-50), anomaly],
-    })),
+    set((state) => {
+      const auth = useAuthStore.getState();
+      const userTeam = (!auth.isDemo && auth.user?.team) ? auth.user.team : null;
+
+      // Filter anomalies to only show their own team's or system anomalies
+      if (userTeam && anomaly.team !== userTeam && anomaly.team !== "system") {
+        return state;
+      }
+      return {
+        anomalies: [...state.anomalies.slice(-50), anomaly],
+      };
+    }),
 
   addSubmission: (submission) =>
     set((state) => {
+      const auth = useAuthStore.getState();
+      const userTeam = (!auth.isDemo && auth.user?.team) ? auth.user.team : null;
+
+      // Filter submissions to only show their own
+      if (userTeam && submission.team !== userTeam) {
+        return state;
+      }
+
       // Idempotent: skip if this ID is already tracked
       if (state.submissions.some((s) => s.id === submission.id)) return state;
       return { submissions: [submission, ...state.submissions] };
     }),
 
-  setSubmissions: (submissions) => set({ submissions }),
+  setSubmissions: (submissions) => {
+    const auth = useAuthStore.getState();
+    const userTeam = (!auth.isDemo && auth.user?.team) ? auth.user.team : null;
+
+    const filtered = userTeam
+      ? submissions.filter((s) => s.team === userTeam)
+      : submissions;
+
+    set({ submissions: filtered });
+  },
 
   updateSubmissionStatus: (id, status, error, failedStage, buildLog) =>
     set((state) => ({

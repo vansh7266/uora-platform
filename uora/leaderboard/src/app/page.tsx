@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView } from "framer-motion";
-// useInView import kept — still used by feature cards and arch layers below.
 import {
   ArrowRight,
   Bot,
@@ -27,14 +26,11 @@ import { DEMO_USER } from "@/lib/demoData";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hero animated visualization: live latency telemetry
-// Shows a continuously oscillating waveform of p50/p90/p99 timings plus
-// floating metric pills. This is the single hero visual on the right.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface PulsePoint { t: number; p50: number; p90: number; p99: number; }
 
 function generatePulse(prev: PulsePoint[] | null = null, count = 64): PulsePoint[] {
-  // Realistic latency simulation around a healthy HFT baseline.
   const base = { p50: 0.18, p90: 0.31, p99: 0.52 };
   if (prev && prev.length === count) {
     const last = prev[prev.length - 1];
@@ -46,7 +42,6 @@ function generatePulse(prev: PulsePoint[] | null = null, count = 64): PulsePoint
     };
     return [...prev.slice(1), next];
   }
-  // First (deterministic) paint matches SSR.
   return Array.from({ length: count }, (_, i) => ({
     t: i,
     p50: base.p50 + Math.sin(i * 0.32) * 0.04,
@@ -96,7 +91,7 @@ function LatencyVisual() {
         initial={{ opacity: 0, scale: 0.96, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-        className="relative rounded-xl border border-[rgba(0,212,255,0.15)] bg-[rgba(7,17,31,0.85)] backdrop-blur-sm overflow-hidden shadow-[0_0_60px_rgba(0,212,255,0.08)]"
+        className="relative rounded-xl border border-[rgba(0,212,255,0.2)] bg-[rgba(6,14,26,0.75)] backdrop-blur-md overflow-hidden shadow-[0_0_60px_rgba(0,212,255,0.1)] hover:border-[rgba(0,212,255,0.35)] transition-colors duration-300"
       >
         {/* Top status bar */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[rgba(0,212,255,0.08)]">
@@ -166,7 +161,6 @@ function LatencyVisual() {
                 strokeDasharray="2,4"
               />
             ))}
-            {/* p99 area fill */}
             <defs>
               <linearGradient id="p99Fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="rgba(0,212,255,0.30)" />
@@ -174,7 +168,6 @@ function LatencyVisual() {
               </linearGradient>
             </defs>
             <path d={`${path} L320,100 L0,100 Z`} fill="url(#p99Fill)" />
-            {/* p50/p90/p99 lines */}
             <path d={path50} fill="none" stroke="rgba(22,199,132,0.55)" strokeWidth="1.2" />
             <path d={path90} fill="none" stroke="rgba(240,185,11,0.65)" strokeWidth="1.2" />
             <path d={path} fill="none" stroke="rgba(0,212,255,1)" strokeWidth="1.8"
@@ -200,7 +193,6 @@ function LatencyVisual() {
 
 function buildPath(points: PulsePoint[], pick: (p: PulsePoint) => number, w: number, h: number) {
   if (points.length === 0) return "";
-  // y-axis: 0..1.5 ms → invert
   const dx = w / (points.length - 1);
   return points
     .map((p, i) => {
@@ -264,7 +256,7 @@ function FloatingChip({ text, delay, top, left, right, bottom }: FloatingChipPro
         delay,
         ease: "easeInOut",
       }}
-      className="absolute z-20 pointer-events-none px-2.5 py-1 rounded-full border border-[rgba(0,212,255,0.2)] bg-[rgba(7,17,31,0.95)] backdrop-blur-sm text-[9px] font-mono uppercase tracking-wider text-[var(--plasma)] shadow-[0_0_16px_rgba(0,212,255,0.2)]"
+      className="absolute z-20 pointer-events-none px-2.5 py-1 rounded-full border border-[rgba(0,212,255,0.2)] bg-[rgba(6,14,26,0.9)] backdrop-blur-md text-[9px] font-mono uppercase tracking-wider text-[var(--plasma)] shadow-[0_0_16px_rgba(0,212,255,0.15)]"
       style={{ top, left, right, bottom }}
     >
       {text}
@@ -273,7 +265,7 @@ function FloatingChip({ text, delay, top, left, right, bottom }: FloatingChipPro
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pipeline animation (full-width section below the hero)
+// Pipeline animation
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
@@ -288,7 +280,6 @@ const PIPELINE_STAGES = [
 function PipelineStrip() {
   const [active, setActive] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-60px" });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -300,8 +291,9 @@ function PipelineStrip() {
   return (
     <div ref={ref} className="relative">
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: 30 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-80px" }}
         transition={{ duration: 0.6 }}
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"
       >
@@ -313,17 +305,17 @@ function PipelineStrip() {
               key={stage.id}
               animate={{
                 borderColor: isActive
-                  ? "rgba(0,212,255,0.5)"
+                  ? "rgba(0,212,255,0.45)"
                   : isDone
-                  ? "rgba(22,199,132,0.3)"
+                  ? "rgba(22,199,132,0.25)"
                   : "rgba(255,255,255,0.06)",
                 backgroundColor: isActive
                   ? "rgba(0,212,255,0.06)"
                   : isDone
                   ? "rgba(22,199,132,0.03)"
-                  : "rgba(7,17,31,0.4)",
+                  : "rgba(6,14,26,0.5)",
                 boxShadow: isActive
-                  ? "0 0 24px rgba(0,212,255,0.18)"
+                  ? "0 0 20px rgba(0,212,255,0.12)"
                   : "0 0 0px rgba(0,0,0,0)",
               }}
               transition={{ duration: 0.4 }}
@@ -402,22 +394,25 @@ function FeatureCard({
   color,
   index,
 }: (typeof FEATURES)[0] & { index: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-60px" });
   const c = color === "plasma" ? "var(--plasma)" : "var(--bid)";
 
   return (
     <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: index * 0.08 }}
-      whileHover={{ y: -3, transition: { duration: 0.2 } }}
-      className="glass rounded-lg p-5 flex flex-col gap-3 group hover:border-[rgba(0,212,255,0.2)] transition-colors"
+      initial={{ opacity: 0, y: 35 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.6, delay: index * 0.08, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={{
+        y: -5,
+        borderColor: "rgba(0,212,255,0.3)",
+        boxShadow: "0 12px 30px -10px rgba(0,212,255,0.15)",
+        transition: { duration: 0.2 }
+      }}
+      className="glass rounded-xl p-5 flex flex-col gap-3 group transition-all duration-300 hover:border-[rgba(0,212,255,0.2)]"
     >
       <div
-        className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0"
-        style={{ background: `${c}15`, border: `1px solid ${c}25` }}
+        className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-105"
+        style={{ background: `${c}12`, border: `1px solid ${c}22` }}
       >
         <Icon className="w-4 h-4" style={{ color: c }} />
       </div>
@@ -468,16 +463,14 @@ function ArchLayer({
   color,
   index,
 }: (typeof ARCH_LAYERS)[0] & { index: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: "-40px" });
   const c = colorToken[color];
 
   return (
     <motion.div
-      ref={ref}
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.45, delay: index * 0.1 }}
+      initial={{ opacity: 0, x: -30 }}
+      whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.6, delay: index * 0.08, ease: "easeOut" }}
       className="flex items-start gap-4"
     >
       <div
@@ -490,7 +483,7 @@ function ArchLayer({
           {components.map((comp) => (
             <span
               key={comp}
-              className="px-2 py-0.5 rounded text-[10px] font-mono"
+              className="px-2 py-0.5 rounded text-[10px] font-mono transition-colors duration-200 hover:bg-[rgba(255,255,255,0.05)]"
               style={{
                 background: `${c}0D`,
                 border: `1px solid ${c}20`,
@@ -524,7 +517,7 @@ const TICKER_ITEMS = [
 function StatsTicker() {
   const doubled = [...TICKER_ITEMS, ...TICKER_ITEMS];
   return (
-    <div className="overflow-hidden border-y border-[rgba(0,212,255,0.06)] py-2.5 bg-[var(--void-900)]">
+    <div className="overflow-hidden border-y border-[rgba(0,212,255,0.06)] py-2.5 bg-[rgba(3,9,15,0.7)] backdrop-blur-md z-10 relative">
       <motion.div
         animate={{ x: ["0%", "-50%"] }}
         transition={{ duration: 35, repeat: Infinity, ease: "linear" }}
@@ -532,7 +525,7 @@ function StatsTicker() {
       >
         {doubled.map((item, i) => (
           <span key={i} className="flex items-center gap-2 text-[10px] font-mono text-[var(--ink-500)] uppercase tracking-wider">
-            <span className="w-1 h-1 rounded-full bg-[var(--plasma)] flex-shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--plasma)] flex-shrink-0" />
             {item}
           </span>
         ))}
@@ -546,7 +539,6 @@ function StatsTicker() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const heroRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
 
@@ -556,9 +548,14 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--void-950)] text-[var(--ink-200)]">
+    <div className="min-h-screen bg-[var(--void-950)] text-[var(--ink-200)] relative overflow-hidden">
+      {/* Decorative floating glassmorphic orbs */}
+      <div className="absolute top-[15%] left-[-10%] w-[38vw] h-[38vw] rounded-full bg-[radial-gradient(circle,rgba(0,212,255,0.05)_0%,transparent_75%)] pointer-events-none blur-3xl z-0" />
+      <div className="absolute top-[55%] right-[-10%] w-[45vw] h-[45vw] rounded-full bg-[radial-gradient(circle,rgba(0,212,255,0.04)_0%,transparent_75%)] pointer-events-none blur-3xl z-0" />
+      <div className="absolute bottom-[5%] left-[5%] w-[32vw] h-[32vw] rounded-full bg-[radial-gradient(circle,rgba(22,199,132,0.03)_0%,transparent_75%)] pointer-events-none blur-3xl z-0" />
+
       {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(1,5,9,0.9)] backdrop-blur-xl">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-[rgba(255,255,255,0.05)] bg-[rgba(1,5,9,0.8)] backdrop-blur-md">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-14 items-center justify-between">
             <Logo size="sm" />
@@ -574,10 +571,7 @@ export default function HomePage() {
       </nav>
 
       {/* Hero */}
-      <section
-        ref={heroRef}
-        className="relative pt-14 pb-20 flex flex-col overflow-hidden"
-      >
+      <section className="relative pt-14 pb-20 flex flex-col overflow-hidden">
         {/* Background layers */}
         <div className="absolute inset-0 bg-grid-plasma pointer-events-none" />
         <div className="absolute inset-0 plasma-glow-bg pointer-events-none" />
@@ -590,7 +584,6 @@ export default function HomePage() {
         />
 
         <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 pt-16 pb-8">
-          {/* 2-column hero */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             <div className="lg:col-span-6">
               {/* Eyebrow */}
@@ -600,7 +593,7 @@ export default function HomePage() {
                 transition={{ duration: 0.5 }}
                 className="flex items-center gap-3 mb-6"
               >
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)] text-[10px] font-mono text-[var(--plasma)] tracking-wider uppercase">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[rgba(0,212,255,0.18)] bg-[rgba(0,212,255,0.04)] text-[10px] font-mono text-[var(--plasma)] tracking-wider uppercase backdrop-blur-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--plasma)] animate-pulse" />
                   Matching Engine Benchmarks · Continuous Integration for HFT
                 </span>
@@ -669,7 +662,7 @@ export default function HomePage() {
                   { value: "99.97", unit: "%", label: "correctness" },
                 ].map((s) => (
                   <div key={s.label}>
-                    <div className="text-xl font-mono font-bold tabnum text-[var(--ink-100)] leading-none">
+                     <div className="text-xl font-mono font-bold tabnum text-[var(--ink-100)] leading-none">
                       {s.value}
                       <span className="text-[10px] text-[var(--ink-400)] font-normal ml-0.5">
                         {s.unit}
@@ -683,7 +676,7 @@ export default function HomePage() {
               </motion.div>
             </div>
 
-            {/* Animated visual on the right */}
+            {/* Animated Latency Waveform */}
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
@@ -699,10 +692,16 @@ export default function HomePage() {
       {/* Ticker */}
       <StatsTicker />
 
-      {/* Pipeline strip */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
+      {/* Pipeline Strip with scroll animation */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-10 max-w-2xl">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.6 }}
+            className="mb-10 max-w-2xl"
+          >
             <div className="label-mono mb-3 text-[var(--plasma)]">Pipeline</div>
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--ink-100)] tracking-tight mb-3">
               Six stages, from source upload to ranked score.
@@ -712,15 +711,21 @@ export default function HomePage() {
               stages. Each transition is logged, validated, and observable in
               the console.
             </p>
-          </div>
+          </motion.div>
           <PipelineStrip />
         </div>
       </section>
 
-      {/* Features */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-[var(--void-900)]">
+      {/* Features Cards with scroll animations */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-[rgba(3,9,15,0.75)] backdrop-blur-md border-y border-[rgba(255,255,255,0.03)] relative z-10">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-12 max-w-2xl">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.6 }}
+            className="mb-12 max-w-2xl"
+          >
             <div className="label-mono mb-3 text-[var(--plasma)]">Platform</div>
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--ink-100)] tracking-tight mb-3">
               Built for the realities of HFT testing.
@@ -729,7 +734,7 @@ export default function HomePage() {
               Untrusted code runs in production-grade isolation. Benchmarks are
               reproducible. Results are streamed live, not batched.
             </p>
-          </div>
+          </motion.div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {FEATURES.map((f, i) => (
               <FeatureCard key={f.title} {...f} index={i} />
@@ -738,11 +743,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Architecture */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
+      {/* Architecture System Layers with scroll animations */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
-            <div>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6 }}
+            >
               <div className="label-mono mb-3 text-[var(--plasma)]">System Design</div>
               <h2 className="text-2xl sm:text-3xl font-bold text-[var(--ink-100)] tracking-tight mb-4">
                 Four decoupled layers, communicating only by stream and pub/sub.
@@ -765,14 +775,14 @@ export default function HomePage() {
                 ].map(({ icon: Icon, label }) => (
                   <span
                     key={label}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded glass text-[11px] font-mono text-[var(--ink-300)]"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded glass text-[11px] font-mono text-[var(--ink-300)] backdrop-blur-sm border border-[rgba(255,255,255,0.08)] hover:border-[rgba(0,212,255,0.25)] transition-colors duration-300"
                   >
                     <Icon className="w-3 h-3 text-[var(--plasma)] opacity-70" />
                     {label}
                   </span>
                 ))}
               </div>
-            </div>
+            </motion.div>
             <div>
               {ARCH_LAYERS.map((l, i) => (
                 <ArchLayer key={l.layer} {...l} index={i} />
@@ -782,8 +792,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="relative py-24 px-4 sm:px-6 lg:px-8 overflow-hidden bg-[var(--void-900)]">
+      {/* CTA Box with glassmorphism scale reveal */}
+      <section className="relative py-24 px-4 sm:px-6 lg:px-8 overflow-hidden bg-[rgba(3,9,15,0.7)] backdrop-blur-md border-t border-[rgba(255,255,255,0.03)] z-10">
         <div className="absolute inset-0 bg-grid-faint pointer-events-none" />
         <div
           className="absolute inset-0 pointer-events-none"
@@ -792,7 +802,13 @@ export default function HomePage() {
               "radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,212,255,0.05) 0%, transparent 70%)",
           }}
         />
-        <div className="relative z-10 mx-auto max-w-3xl text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 20 }}
+          whileInView={{ opacity: 1, scale: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.6 }}
+          className="relative z-10 mx-auto max-w-3xl text-center"
+        >
           <div className="label-mono mb-4 text-[var(--plasma)]">Get started</div>
           <h2 className="text-3xl sm:text-4xl font-black text-[var(--ink-0)] tracking-tight mb-4">
             Run your first benchmark in two minutes.
@@ -812,11 +828,11 @@ export default function HomePage() {
               View a Sample Run
             </button>
           </div>
-        </div>
+        </motion.div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[rgba(255,255,255,0.05)] py-8 px-4 sm:px-6">
+      <footer className="border-t border-[rgba(255,255,255,0.05)] py-8 px-4 sm:px-6 relative z-10 bg-[var(--void-950)]">
         <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
           <Logo size="xs" />
           <div className="text-[10px] font-mono text-[var(--ink-500)] uppercase tracking-wider">
