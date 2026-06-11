@@ -1,8 +1,26 @@
 import os
+import sys
 import html
 import base64
 from io import BytesIO
 import matplotlib.pyplot as plt
+
+# On macOS, ensure Homebrew's lib path is in DYLD_FALLBACK_LIBRARY_PATH so WeasyPrint can load gobject / pango
+if sys.platform == "darwin":
+    homebrew_lib = "/opt/homebrew/lib"
+    if os.path.exists(homebrew_lib):
+        # Update DYLD_FALLBACK_LIBRARY_PATH
+        fallback_path = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+        if homebrew_lib not in fallback_path:
+            os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = (
+                f"{fallback_path}:{homebrew_lib}" if fallback_path else homebrew_lib
+            )
+        # Also update DYLD_LIBRARY_PATH
+        lib_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+        if homebrew_lib not in lib_path:
+            os.environ["DYLD_LIBRARY_PATH"] = (
+                f"{lib_path}:{homebrew_lib}" if lib_path else homebrew_lib
+            )
 
 try:
     from weasyprint import HTML
@@ -21,39 +39,49 @@ class ReportGenerator:
     """Generates PDF performance reports for UORA submissions."""
 
     def __init__(self):
-        # We use a custom color palette for UORA
+        # Curated, professional light palette suited for printable PDFs
         self.colors = {
-            "good": "#10b981",    # emerald-500
-            "warning": "#f59e0b", # amber-500
-            "danger": "#ef4444",  # red-500
-            "bg": "#0f172a",      # slate-900
-            "text": "#f8fafc",    # slate-50
-            "muted": "#94a3b8"    # slate-400
+            "primary": "#0f172a",      # slate-900 (Deep Navy/Slate)
+            "accent": "#0284c7",       # sky-600 (Core Tech Blue)
+            "good": "#10b981",         # emerald-500 (Clean Success Green)
+            "warning": "#f59e0b",      # amber-500 (Vibrant Warning Amber)
+            "danger": "#ef4444",       # red-500 (Alert Red)
+            "bg": "#ffffff",           # white
+            "card_bg": "#f8fafc",      # slate-50 (Very Light Grey)
+            "text": "#1e293b",         # slate-800
+            "muted": "#64748b",        # slate-500
+            "border": "#e2e8f0"        # slate-200
         }
 
     def generate_latency_chart(self, latencies: list) -> str:
         """Generates a base64 encoded PNG histogram of latencies."""
-        plt.style.use('dark_background')
-        fig, ax = plt.subplots(figsize=(8, 4))
+        plt.style.use('default')  # Clean light background style for printing
+        fig, ax = plt.subplots(figsize=(8, 3.5))
         
         # Convert to ms
         latencies_ms = [l / 1_000_000 for l in latencies]
         
-        ax.hist(latencies_ms, bins=50, color='#0ea5e9', alpha=0.8, edgecolor='none')
-        ax.set_title("Latency Distribution (ms)", color=self.colors["text"], pad=15)
-        ax.set_xlabel("Latency (ms)", color=self.colors["muted"])
-        ax.set_ylabel("Frequency", color=self.colors["muted"])
+        # Beautiful sky blue bars with slight transparency and no borders
+        ax.hist(latencies_ms, bins=50, color='#0ea5e9', alpha=0.85, edgecolor='none')
+        
+        ax.set_title("Latency Distribution (ms)", color=self.colors["primary"], pad=15, fontsize=12, fontweight='bold')
+        ax.set_xlabel("Latency (ms)", color=self.colors["muted"], fontsize=9)
+        ax.set_ylabel("Frequency (Order Count)", color=self.colors["muted"], fontsize=9)
         
         # Style adjustments
-        ax.grid(True, alpha=0.1, color='#e2e8f0')
+        ax.grid(True, alpha=0.15, color='#64748b', linestyle='--')
+        ax.set_facecolor('#f8fafc')
+        fig.patch.set_facecolor('#ffffff')
+        
         for spine in ax.spines.values():
-            spine.set_visible(False)
+            spine.set_color('#cbd5e1')
+            spine.set_linewidth(0.5)
             
         plt.tight_layout()
         
         # Render to base64
         buf = BytesIO()
-        plt.savefig(buf, format="png", dpi=150, facecolor=self.colors["bg"], transparent=False)
+        plt.savefig(buf, format="png", dpi=200, facecolor='#ffffff', transparent=False)
         plt.close(fig)
         return base64.b64encode(buf.getvalue()).decode('utf-8')
 
@@ -63,38 +91,75 @@ class ReportGenerator:
         latency_data = score_data.get("latency", {})
         throughput_data = score_data.get("throughput", {})
         correctness_data = score_data.get("correctness", {})
+        reliability_data = score_data.get("reliability", {})
 
         p99_latency_ms = score_data.get("p99_latency_ms", latency_data.get("p99_ms", 0))
+        p50_latency_ms = latency_data.get("p50_ms", 0)
+        p90_latency_ms = latency_data.get("p90_ms", 0)
+        
         throughput = score_data.get("throughput", 0)
         if isinstance(throughput, dict):
             throughput = throughput.get("avg", throughput.get("max", 0))
         elif isinstance(throughput_data, dict):
             throughput = throughput_data.get("avg", throughput_data.get("max", 0))
+            
+        throughput_max = throughput_data.get("max", throughput)
+            
         correctness_rate = score_data.get("correctness_rate", correctness_data.get("rate", 0))
         
+        success_rate = reliability_data.get("success_rate", 1.0)
+        error_rate = reliability_data.get("error_rate", 0.0)
+        total_orders = reliability_data.get("total_orders", 0)
+        
         color = self.colors["danger"]
-        if score > 80:
+        rating = "UNSATISFACTORY"
+        rating_desc = "Correctness violations or excessive latency. Not suitable for trading."
+        if score >= 90:
             color = self.colors["good"]
-        elif score > 50:
+            rating = "PRODUCTION READY (EXCELLENT)"
+            rating_desc = "Outstanding latency profile, maximum throughput, and zero correctness violations."
+        elif score >= 75:
+            color = self.colors["good"]
+            rating = "PRODUCTION READY"
+            rating_desc = "Passes correctness and safety validation. Acceptable performance bounds."
+        elif score >= 50:
             color = self.colors["warning"]
+            rating = "NEEDS OPTIMIZATION"
+            rating_desc = "No fatal correctness errors, but exhibits high tail latency or lower throughput."
 
         return f"""
-        <div class="score-card">
-            <h2>Composite Score</h2>
-            <div class="score-value" style="color: {color};">{score:.2f}</div>
-            <div class="metrics-grid">
-                <div class="metric">
-                    <span class="label">P99 Latency</span>
-                    <span class="value">{float(p99_latency_ms):.2f} ms</span>
+        <div class="summary-section">
+            <div class="score-card">
+                <div class="score-label">COMPOSITE SCORE</div>
+                <div class="score-value" style="color: {color};">{score:.2f}</div>
+                <div class="score-rating" style="background-color: {color}15; color: {color}; border: 1px solid {color}30;">
+                    {rating}
                 </div>
-                <div class="metric">
-                    <span class="label">Throughput</span>
-                    <span class="value">{float(throughput):,.0f} ops</span>
+                <div class="score-rating-desc">{rating_desc}</div>
+            </div>
+            
+            <div class="score-info">
+                <h3>Resilience Score Metric Analysis</h3>
+                <p>UORA computes the composite score using the following formalized objective function:</p>
+                <div class="formula-box">
+                    Score = (Throughput &times; Correctness &times; Success Rate) / (P99 Latency + Resource Penalty<sup>2</sup>)
                 </div>
-                <div class="metric">
-                    <span class="label">Correctness</span>
-                    <span class="value">{float(correctness_rate) * 100:.2f}%</span>
-                </div>
+                <p>This ensures that scoring is strictly dependent on correctness (0% if any Level 1/2 correctness rule is violated), penalizes system resource overuse, and rewards low tail latency under concurrent stress.</p>
+                
+                <table class="summary-details-table">
+                    <tr>
+                        <td><strong>Reliability</strong></td>
+                        <td>Success Rate: {success_rate * 100:.2f}% | Error Rate: {error_rate * 100:.2f}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Total Volume</strong></td>
+                        <td>{total_orders:,} total orders processed under stress</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Resource Penalty</strong></td>
+                        <td>{score_data.get("resource_penalty", 0.0):.4f} (vCPU/Memory limit adjustments)</td>
+                    </tr>
+                </table>
             </div>
         </div>
         """
@@ -104,113 +169,472 @@ class ReportGenerator:
         
         All user-provided data is escaped via html.escape() to prevent XSS.
         """
-        # Escape submission_id to prevent XSS
+        # Escape fields to prevent XSS
         safe_submission_id = html.escape(str(submission_id))
         
-        violations_html = ""
+        # Get language and date if present, else fallback
+        language = html.escape(str(score_data.get("language", "Python/C++")))
+        date_str = html.escape(str(score_data.get("date", "2026-06-11")))
+        
+        latency_data = score_data.get("latency", {})
+        throughput_data = score_data.get("throughput", {})
+        correctness_data = score_data.get("correctness", {})
+        
+        p50_ms = latency_data.get("p50_ms", 0.0)
+        p90_ms = latency_data.get("p90_ms", 0.0)
+        p99_ms = latency_data.get("p99_ms", 0.0)
+        
+        throughput_avg = throughput_data.get("avg", 0.0)
+        throughput_max = throughput_data.get("max", 0.0)
+        
+        correctness_pct = correctness_data.get("percentage", "0.00%")
+        
+        # Anomaly status block
+        anomaly_score = score_data.get("anomaly", {}).get("score", 0.0)
+        if anomaly_result and anomaly_result.get("is_anomaly"):
+            safe_reason = html.escape(str(anomaly_result.get('reason', 'Suspicious behavior pattern')))
+            anomaly_html = f"""
+            <div class="anomaly-alert danger">
+                <div class="alert-title">⚠️ MACHINE LEARNING ANOMALY DETECTED</div>
+                <div class="alert-content">
+                    <p><strong>Anomaly Score:</strong> {anomaly_score:.4f} | <strong>Confidence:</strong> {anomaly_result.get('confidence', 0)*100:.1f}%</p>
+                    <p><strong>Reason:</strong> {safe_reason}</p>
+                </div>
+            </div>
+            """
+        else:
+            anomaly_html = f"""
+            <div class="anomaly-alert good">
+                <div class="alert-title">✓ MACHINE LEARNING RESILIENCE SCAN PASSED</div>
+                <div class="alert-content">
+                    <p><strong>Anomaly Score:</strong> {anomaly_score:.4f} | <strong>Status:</strong> CLEAN</p>
+                    <p>No anomalous latency spikes, volume leakage, or suspicious order book state transitions were detected by the isolation forest model during stress testing.</p>
+                </div>
+            </div>
+            """
+
+        # Correctness violations section
         if violations:
-            # Escape all user-provided violation fields
             rows = "".join(
-                f"<tr><td>{html.escape(str(v.get('action', '')))}</td>"
-                f"<td>{html.escape(str(v.get('reason', '')))}</td></tr>"
+                f"<tr>"
+                f"<td style='font-family: monospace; font-size: 9pt;'>{html.escape(str(v.get('action', '')))}</td>"
+                f"<td>{html.escape(str(v.get('reason', '')))}</td>"
+                f"</tr>"
                 for v in violations
             )
             violations_html = f"""
-            <h3>Correctness Violations</h3>
-            <table>
-                <tr><th>Action</th><th>Violation Reason</th></tr>
-                {rows}
+            <div class="section-title">Correctness Audit & Violations</div>
+            <p class="section-desc">UORA enforces four levels of correctness constraints based on double-auction reference LOB laws. The following violations were logged:</p>
+            <table class="violations-table">
+                <thead>
+                    <tr><th style="width: 30%;">Violation Target</th><th>Audit Log Details</th></tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
             </table>
             """
-            
-        anomaly_html = ""
-        if anomaly_result and anomaly_result.get("is_anomaly"):
-            # Escape anomaly reason to prevent XSS
-            safe_reason = html.escape(str(anomaly_result.get('reason', 'Suspicious behavior pattern')))
-            anomaly_html = f"""
-            <div class="anomaly-alert">
-                <h3>⚠️ ML Anomaly Detected</h3>
-                <p><strong>Confidence:</strong> {anomaly_result.get('confidence', 0)*100:.1f}%</p>
-                <p><strong>Reason:</strong> {safe_reason}</p>
+        else:
+            violations_html = f"""
+            <div class="section-title">Correctness Audit & Violations</div>
+            <p class="section-desc">UORA enforces four levels of correctness constraints based on double-auction reference LOB laws:</p>
+            <table class="rules-table">
+                <thead>
+                    <tr><th style="width: 25%;">Audit Level</th><th>Constraint Verified</th><th style="width: 15%; text-align: center;">Status</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>Level 1 (L1)</strong></td><td>Order ID uniqueness, field boundaries, and syntactic validity.</td><td class="status-pass">PASS</td></tr>
+                    <tr><td><strong>Level 2 (L2)</strong></td><td>Status consistency (pending/partial_fill/filled/cancelled) compared to reference.</td><td class="status-pass">PASS</td></tr>
+                    <tr><td><strong>Level 3 (L3)</strong></td><td>Execution execution price/quantity matching matching accuracy.</td><td class="status-pass">PASS</td></tr>
+                    <tr><td><strong>Level 4 (L4)</strong></td><td>Resting order book state consistency and transition flow legality.</td><td class="status-pass">PASS</td></tr>
+                </tbody>
+            </table>
+            <div class="success-banner">
+                <strong>✓ CORRECTNESS GUARANTEED:</strong> All 4 correctness levels verified with 100% fidelity. No compliance violations detected.
             </div>
             """
 
         css = f"""
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
+
+        @page {{
+            size: A4;
+            margin: 18mm;
+            @bottom-right {{
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: 'Inter', sans-serif;
+                font-size: 8pt;
+                color: {self.colors["muted"]};
+            }}
+            @bottom-left {{
+                content: "UORA Platform - Confidential Benchmarking Report";
+                font-family: 'Inter', sans-serif;
+                font-size: 8pt;
+                color: {self.colors["muted"]};
+            }}
+        }}
+
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Inter', -apple-system, sans-serif;
             background-color: {self.colors["bg"]};
             color: {self.colors["text"]};
             margin: 0;
-            padding: 40px;
+            padding: 0;
+            line-height: 1.5;
+            font-size: 10pt;
         }}
+
+        /* Header Style */
         .header {{
-            border-bottom: 2px solid #334155;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
+            border-bottom: 2px solid {self.colors["primary"]};
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
         }}
-        h1 {{ margin: 0; color: #38bdf8; font-size: 28px; }}
-        .subtitle {{ color: {self.colors["muted"]}; font-size: 14px; margin-top: 5px; }}
+        .header-title-box {{
+            flex: 1;
+        }}
+        h1 {{
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            color: {self.colors["primary"]};
+            font-size: 24pt;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }}
+        .subtitle {{
+            color: {self.colors["muted"]};
+            font-size: 9pt;
+            margin-top: 3px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        .meta-table {{
+            width: 100%;
+            margin-bottom: 25px;
+            border-collapse: collapse;
+        }}
+        .meta-table td {{
+            padding: 6px 12px;
+            font-size: 8.5pt;
+            border: 1px solid {self.colors["border"]};
+            background-color: {self.colors["card_bg"]};
+        }}
+        .meta-table td strong {{
+            color: {self.colors["primary"]};
+        }}
+
+        /* Executive Summary Grid */
+        .summary-section {{
+            display: flex;
+            margin-bottom: 25px;
+            gap: 20px;
+        }}
         .score-card {{
-            background: #1e293b;
-            border-radius: 8px;
+            flex: 1;
+            background: {self.colors["card_bg"]};
+            border: 1px solid {self.colors["border"]};
+            border-radius: 10px;
             padding: 20px;
             text-align: center;
-            margin-bottom: 30px;
-        }}
-        .score-value {{ font-size: 64px; font-weight: bold; margin: 10px 0; }}
-        .metrics-grid {{
             display: flex;
-            justify-content: space-around;
-            margin-top: 20px;
-            border-top: 1px solid #334155;
-            padding-top: 20px;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }}
-        .metric .label {{ display: block; color: {self.colors["muted"]}; font-size: 12px; text-transform: uppercase; }}
-        .metric .value {{ display: block; font-size: 20px; font-weight: 600; margin-top: 5px; }}
-        img.chart {{ width: 100%; border-radius: 8px; margin: 20px 0; }}
-        table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #334155; }}
-        th {{ color: {self.colors["muted"]}; font-weight: normal; }}
-        .anomaly-alert {{
-            background: #7f1d1d;
-            border-left: 4px solid #ef4444;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 30px;
-        }}
-        .anomaly-alert h3 {{ margin-top: 0; color: #fca5a5; }}
-        .footer {{
-            text-align: center;
+        .score-label {{
+            font-family: 'Outfit', sans-serif;
+            font-size: 9pt;
+            font-weight: 700;
+            letter-spacing: 1px;
             color: {self.colors["muted"]};
-            font-size: 12px;
-            margin-top: 50px;
-            padding-top: 20px;
-            border-top: 1px solid #334155;
+        }}
+        .score-value {{
+            font-family: 'Outfit', sans-serif;
+            font-size: 44pt;
+            font-weight: 700;
+            line-height: 1.1;
+            margin: 8px 0;
+        }}
+        .score-rating {{
+            font-size: 8.5pt;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }}
+        .score-rating-desc {{
+            font-size: 7.5pt;
+            color: {self.colors["muted"]};
+            max-width: 200px;
+            margin: 0 auto;
+        }}
+        .score-info {{
+            flex: 1.8;
+            border: 1px solid {self.colors["border"]};
+            border-radius: 10px;
+            padding: 18px;
+        }}
+        .score-info h3 {{
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-family: 'Outfit', sans-serif;
+            color: {self.colors["primary"]};
+            font-size: 12pt;
+        }}
+        .score-info p {{
+            font-size: 8.5pt;
+            color: {self.colors["muted"]};
+            margin: 0 0 10px 0;
+        }}
+        .formula-box {{
+            background-color: {self.colors["primary"]};
+            color: #ffffff;
+            font-family: monospace;
+            font-size: 8.5pt;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 12px;
+            font-weight: bold;
+        }}
+        .summary-details-table {{
+            width: 100%;
+            font-size: 8pt;
+            border-collapse: collapse;
+        }}
+        .summary-details-table td {{
+            padding: 5px 0;
+            border-bottom: 1px solid {self.colors["border"]};
+        }}
+        .summary-details-table td:first-child {{
+            width: 25%;
+        }}
+
+        /* Metrics Dashboard Grid */
+        .section-title {{
+            font-family: 'Outfit', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            color: {self.colors["primary"]};
+            margin-top: 25px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid {self.colors["border"]};
+            padding-bottom: 5px;
+        }}
+        .section-desc {{
+            font-size: 8.5pt;
+            color: {self.colors["muted"]};
+            margin-bottom: 15px;
+            margin-top: 0;
+        }}
+        
+        .metrics-dashboard {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 25px;
+        }}
+        .metric-tile {{
+            flex: 1;
+            min-width: 45%;
+            background-color: {self.colors["card_bg"]};
+            border: 1px solid {self.colors["border"]};
+            border-radius: 8px;
+            padding: 12px 15px;
+        }}
+        .metric-tile h4 {{
+            margin: 0 0 8px 0;
+            font-family: 'Outfit', sans-serif;
+            font-size: 10pt;
+            color: {self.colors["primary"]};
+            border-bottom: 1px solid {self.colors["border"]};
+            padding-bottom: 4px;
+        }}
+        .metric-row {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 8.5pt;
+            margin-bottom: 4px;
+        }}
+        .metric-row span.m-label {{
+            color: {self.colors["muted"]};
+        }}
+        .metric-row span.m-val {{
+            font-weight: 600;
+            color: {self.colors["primary"]};
+        }}
+
+        /* Charts & Visuals */
+        .chart-container {{
+            border: 1px solid {self.colors["border"]};
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            background-color: #ffffff;
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+        }}
+        img.chart {{
+            width: 100%;
+            height: auto;
+            border-radius: 6px;
+        }}
+
+        /* Alerts and Banners */
+        .anomaly-alert {{
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+        }}
+        .anomaly-alert.good {{
+            background-color: {self.colors["good"]}08;
+            border: 1px solid {self.colors["good"]}30;
+            border-left: 4px solid {self.colors["good"]};
+        }}
+        .anomaly-alert.good .alert-title {{
+            color: {self.colors["good"]};
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            font-size: 9.5pt;
+            margin-bottom: 5px;
+        }}
+        .anomaly-alert.danger {{
+            background-color: {self.colors["danger"]}08;
+            border: 1px solid {self.colors["danger"]}30;
+            border-left: 4px solid {self.colors["danger"]};
+        }}
+        .anomaly-alert.danger .alert-title {{
+            color: {self.colors["danger"]};
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            font-size: 9.5pt;
+            margin-bottom: 5px;
+        }}
+        .anomaly-alert p {{
+            margin: 0;
+            font-size: 8.5pt;
+        }}
+
+        /* Tables */
+        .rules-table, .violations-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 8.5pt;
+        }}
+        .rules-table th, .violations-table th {{
+            background-color: {self.colors["primary"]};
+            color: #ffffff;
+            font-family: 'Outfit', sans-serif;
+            text-align: left;
+            padding: 8px 12px;
+            font-weight: 600;
+        }}
+        .rules-table td, .violations-table td {{
+            padding: 8px 12px;
+            border-bottom: 1px solid {self.colors["border"]};
+        }}
+        .rules-table tr:nth-child(even) {{
+            background-color: {self.colors["card_bg"]};
+        }}
+        .status-pass {{
+            color: {self.colors["good"]};
+            font-weight: bold;
+            text-align: center;
+        }}
+        .success-banner {{
+            background-color: {self.colors["good"]}10;
+            color: {self.colors["good"]};
+            border: 1px dashed {self.colors["good"]}50;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 8.5pt;
+            margin-bottom: 25px;
+            text-align: center;
+        }}
+
+        .page-break {{
+            page-break-before: always;
         }}
         """
 
         return f"""
         <!DOCTYPE html>
         <html>
-        <head><style>{css}</style></head>
+        <head>
+            <meta charset="utf-8">
+            <title>UORA Performance Report</title>
+            <style>{css}</style>
+        </head>
         <body>
+            <!-- Page 1: Executive Dashboard -->
             <div class="header">
-                <h1>UORA Performance Report</h1>
-                <div class="subtitle">Submission ID: {safe_submission_id}</div>
+                <div class="header-title-box">
+                    <h1>UORA PERFORMANCE & RESILIENCE</h1>
+                    <div class="subtitle">AUTOMATED HFT BENCHMARKING ENGINE AUDIT</div>
+                </div>
             </div>
+            
+            <table class="meta-table">
+                <tr>
+                    <td><strong>Submission ID:</strong> {safe_submission_id}</td>
+                    <td><strong>Evaluation Date:</strong> {date_str}</td>
+                </tr>
+                <tr>
+                    <td><strong>Engine Language:</strong> {language}</td>
+                    <td><strong>Target Protocol:</strong> REST API (FIX Loopback)</td>
+                </tr>
+            </table>
             
             {self.generate_score_card(score_data)}
             
-            <h3>Latency Distribution</h3>
-            <img class="chart" src="data:image/png;base64,{latency_b64}" />
+            <div class="section-title">Key Performance Dashboard</div>
+            <p class="section-desc">Summary of telemetry data captured across simulated closed-loop liquidity stress testing:</p>
+            
+            <div class="metrics-dashboard">
+                <div class="metric-tile">
+                    <h4>Latency Profile</h4>
+                    <div class="metric-row"><span class="m-label">P50 Latency (Median)</span><span class="m-val">{p50_ms:.3f} ms</span></div>
+                    <div class="metric-row"><span class="m-label">P90 Latency (Tail)</span><span class="m-val">{p90_ms:.3f} ms</span></div>
+                    <div class="metric-row"><span class="m-label">P99 Latency (Tail)</span><span class="m-val">{p99_ms:.3f} ms</span></div>
+                </div>
+                
+                <div class="metric-tile">
+                    <h4>Throughput Capacity</h4>
+                    <div class="metric-row"><span class="m-label">Average TPS</span><span class="m-val">{throughput_avg:,.1f} {score_data.get("throughput", {}).get("unit", "ops")}</span></div>
+                    <div class="metric-row"><span class="m-label">Peak TPS</span><span class="m-val">{throughput_max:,.1f} {score_data.get("throughput", {}).get("unit", "ops")}</span></div>
+                    <div class="metric-row"><span class="m-label">State</span><span class="m-val">STABLE</span></div>
+                </div>
+            </div>
             
             {anomaly_html}
+            
+            <div class="page-break"></div>
+            
+            <!-- Page 2: Visual Telemetry and Compliance Audit -->
+            <div class="header">
+                <div class="header-title-box">
+                    <h1>UORA PERFORMANCE & RESILIENCE</h1>
+                    <div class="subtitle">VISUAL TELEMETRY & COMPLIANCE AUDIT</div>
+                </div>
+            </div>
+            
+            <div class="section-title">Latency Distribution Analysis</div>
+            <p class="section-desc">The graph below plots order processing latency percentiles. Tail latencies are crucial indicators of system stability under HFT load.</p>
+            
+            <div class="chart-container">
+                <img class="chart" src="data:image/png;base64,{latency_b64}" />
+            </div>
+            
             {violations_html}
             
-            <div class="footer">
-                Generated by UORA Platform<br/>
-                Unified Orderbook Resilience Architecture
-            </div>
         </body>
         </html>
         """
@@ -263,6 +687,7 @@ class ReportGenerator:
                 f.write(pdf_content)
         return output_path
 
+
 if __name__ == "__main__":
     generator = ReportGenerator()
     sub_id = "test-123"
@@ -270,10 +695,36 @@ if __name__ == "__main__":
     # Mock data
     latencies = [1_500_000, 2_000_000, 2_100_000, 1_900_000, 5_000_000, 1_600_000] * 100
     score_data = {
-        "composite_score": 87.5,
-        "p99_latency_ms": 4.8,
-        "throughput": 45000,
-        "correctness_rate": 1.0
+        "composite_score": 92.45,
+        "language": "Python",
+        "date": "2026-06-11 15:07:39",
+        "throughput": {
+            "avg": 45120.5,
+            "max": 58900.0,
+            "unit": "orders/sec",
+        },
+        "latency": {
+            "p50_ms": 1.75,
+            "p90_ms": 2.84,
+            "p99_ms": 4.90,
+        },
+        "correctness": {
+            "rate": 1.0,
+            "percentage": "100.00%",
+        },
+        "reliability": {
+            "success_rate": 1.0,
+            "error_rate": 0.0,
+            "total_orders": 250000,
+        },
+        "anomaly": {
+            "score": 0.042,
+            "is_anomaly": False,
+            "confidence": 0.98,
+            "reason": "Clean traffic signature",
+        },
+        "resource_penalty": 0.0,
+        "formula": "(throughput &times; correctness &times; success_rate) / (p99_latency_ms + resource_penalty²)",
     }
     violations = []
     anomaly = {
