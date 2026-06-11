@@ -1,0 +1,27 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# UORA — production overlay. Use ALONGSIDE the base docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Adds the Next.js leaderboard container and wires the public URLs. The base
+# compose already brings up MinIO, TimescaleDB, Redis, the submission API,
+# BuildKit, the sandbox builder, the benchmark worker, Envoy, and the ingester.
+# ──────────────────────────────────────────────────────────────────────────────
+services:
+  leaderboard:
+    build:
+      context: ./uora/leaderboard
+      dockerfile: Dockerfile
+      args:
+        # Public URLs the browser hits. Set DOMAIN in .env (e.g. http://203.0.113.5
+        # or https://uora.example.com). For a bare IP demo, use the server's IP.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env}
+        NEXT_PUBLIC_REFERENCE_ENGINE_URL: ${PUBLIC_REFERENCE_ENGINE_URL:-${PUBLIC_API_URL}}
+    container_name: uora-leaderboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - submission
+    mem_limit: 512m
+    cpus: 1.0
