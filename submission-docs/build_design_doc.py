@@ -58,41 +58,41 @@ SUBTITLE = ParagraphStyle(
 )
 H1 = ParagraphStyle(
     "H1X", parent=styles["Heading1"], fontName="Helvetica-Bold",
-    fontSize=20, leading=24, textColor=INK_0,
-    spaceBefore=12, spaceAfter=10,
+    fontSize=21, leading=25, textColor=INK_0,
+    spaceBefore=14, spaceAfter=11,
 )
 H2 = ParagraphStyle(
     "H2X", parent=styles["Heading2"], fontName="Helvetica-Bold",
-    fontSize=14, leading=18, textColor=PLASMA,
-    spaceBefore=14, spaceAfter=6,
+    fontSize=15, leading=19, textColor=PLASMA,
+    spaceBefore=15, spaceAfter=7,
 )
 H3 = ParagraphStyle(
     "H3X", parent=styles["Heading3"], fontName="Helvetica-Bold",
-    fontSize=11, leading=14, textColor=INK_100,
-    spaceBefore=8, spaceAfter=3,
+    fontSize=12.5, leading=16, textColor=INK_100,
+    spaceBefore=9, spaceAfter=4,
 )
 BODY = ParagraphStyle(
     "BodyX", parent=styles["Normal"], fontName="Helvetica",
-    fontSize=10, leading=14.5, textColor=INK_100, alignment=TA_JUSTIFY,
-    spaceBefore=0, spaceAfter=6,
+    fontSize=11, leading=16.5, textColor=INK_100, alignment=TA_JUSTIFY,
+    spaceBefore=0, spaceAfter=8,
 )
 BODY_DIM = ParagraphStyle(
-    "BodyDimX", parent=BODY, textColor=INK_300, fontSize=9.5,
+    "BodyDimX", parent=BODY, textColor=INK_300, fontSize=10.5,
 )
 MONO = ParagraphStyle(
     "MonoX", parent=styles["Code"], fontName="Courier",
-    fontSize=8.5, leading=12, textColor=PLASMA,
+    fontSize=9.5, leading=13, textColor=PLASMA,
     leftIndent=10, rightIndent=10, spaceAfter=6, spaceBefore=2,
     backColor=PANEL, borderColor=PANEL_BD, borderWidth=0.5, borderPadding=6,
 )
 CAPTION = ParagraphStyle(
     "CapX", parent=styles["Italic"], fontName="Helvetica-Oblique",
-    fontSize=8.5, leading=11, textColor=INK_400, alignment=TA_CENTER,
-    spaceBefore=4, spaceAfter=12,
+    fontSize=9.5, leading=12.5, textColor=INK_400, alignment=TA_CENTER,
+    spaceBefore=5, spaceAfter=14,
 )
 EYEBROW = ParagraphStyle(
     "EyeX", fontName="Courier-Bold",
-    fontSize=8, leading=10, textColor=PLASMA, alignment=TA_LEFT,
+    fontSize=8.5, leading=11, textColor=PLASMA, alignment=TA_LEFT,
     spaceAfter=2, leftIndent=0,
 )
 
@@ -642,14 +642,14 @@ def build(path: str) -> None:
 
     story.append(Paragraph("4.1  Stage-by-stage detail", H2))
 
-    cell_h = ParagraphStyle("CellH", fontName="Helvetica-Bold", fontSize=8,
-                            textColor=INK_0, leading=11)
-    cell_k = ParagraphStyle("CellK", fontName="Helvetica-Bold", fontSize=8,
-                            textColor=PLASMA, leading=11)
-    cell_b = ParagraphStyle("CellB", fontName="Helvetica", fontSize=8,
-                            textColor=INK_100, leading=11)
-    cell_c = ParagraphStyle("CellC", fontName="Courier", fontSize=7.5,
-                            textColor=BID, leading=10.5)
+    cell_h = ParagraphStyle("CellH", fontName="Helvetica-Bold", fontSize=9.5,
+                            textColor=INK_0, leading=13)
+    cell_k = ParagraphStyle("CellK", fontName="Helvetica-Bold", fontSize=9.5,
+                            textColor=PLASMA, leading=13)
+    cell_b = ParagraphStyle("CellB", fontName="Helvetica", fontSize=9.5,
+                            textColor=INK_100, leading=13)
+    cell_c = ParagraphStyle("CellC", fontName="Courier", fontSize=8.5,
+                            textColor=BID, leading=13)
 
     stage_rows = [
         [Paragraph("Stage", cell_h),
@@ -827,13 +827,13 @@ def build(path: str) -> None:
 
     # ─── 10. Tech stack ────────────────────────────────────────────────────
     story.append(Paragraph("10.  Technology Stack", H1))
-    cell_h2 = ParagraphStyle("CellH2", fontName="Helvetica-Bold", fontSize=7.8,
-                             textColor=INK_0, leading=10.5)
-    cell_k2 = ParagraphStyle("CellK2", fontName="Helvetica-Bold", fontSize=7.8,
-                             textColor=PLASMA, leading=10.5)
-    cell_w2 = ParagraphStyle("CellW2", fontName="Helvetica-Bold", fontSize=7.8,
-                             textColor=INK_0, leading=10.5)
-    cell_b2 = ParagraphStyle("CellB2", fontName="Helvetica", fontSize=7.8,
+    cell_h2 = ParagraphStyle("CellH2", fontName="Helvetica-Bold", fontSize=9,
+                             textColor=INK_0, leading=12.5)
+    cell_k2 = ParagraphStyle("CellK2", fontName="Helvetica-Bold", fontSize=9,
+                             textColor=PLASMA, leading=12.5)
+    cell_w2 = ParagraphStyle("CellW2", fontName="Helvetica-Bold", fontSize=9,
+                             textColor=INK_0, leading=12.5)
+    cell_b2 = ParagraphStyle("CellB2", fontName="Helvetica", fontSize=9,
                              textColor=INK_100, leading=10.5)
 
     tech_triples = [
@@ -887,9 +887,9 @@ def build(path: str) -> None:
         "LOB up to the SSE event stream.",
         BODY,
     ))
-    cell_mono = ParagraphStyle("CellMono", fontName="Courier", fontSize=7.5,
-                               textColor=PLASMA, leading=10.5)
-    cell_n = ParagraphStyle("CellN", fontName="Courier-Bold", fontSize=8.5,
+    cell_mono = ParagraphStyle("CellMono", fontName="Courier", fontSize=8.5,
+                               textColor=PLASMA, leading=12.5)
+    cell_n = ParagraphStyle("CellN", fontName="Courier-Bold", fontSize=9.5,
                             textColor=BID, leading=10.5, alignment=TA_CENTER)
 
     test_triples = [
@@ -939,33 +939,42 @@ def build(path: str) -> None:
         BODY,
     ))
     result_rows = [
-        ["Submission",                 "Lang",   "Score",  "p99",   "TPS",     "Correct", "Anomaly"],
-        ["examples/dummy_engine.py",   "python", "228.0",  "124 ms", "28,594", "100.00%", "0.85"],
-        ["examples/working_engine.cpp","cpp",    "112.2",  "95 ms",  "50,757", " 18.00%", "0.91"],
+        ["Submission",                  "Lang",   "Score",  "p99",    "TPS",     "Correct", "Anomaly"],
+        ["examples/advanced_engine.py", "python", "230.5",  "126 ms", "29,193",  "100.00%", "0.35 clean"],
+        ["examples/dummy_engine.py",    "python", "197.9",  "136 ms", "27,065",  "100.00%", "0.35 clean"],
+        ["examples/working_engine.cpp", "cpp",    "229.3",  "95 ms",  "50,757",  " 18.00%", "0.85 flag"],
     ]
-    t = Table(result_rows, colWidths=[5.5*cm, 1.4*cm, 1.6*cm, 1.6*cm, 1.8*cm, 1.8*cm, 1.7*cm])
+    t = Table(result_rows, colWidths=[5.6*cm, 1.4*cm, 1.5*cm, 1.6*cm, 1.8*cm, 1.7*cm, 1.9*cm])
     t.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTNAME", (0, 1), (-1, -1), "Courier"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7.8),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.8),
         ("TEXTCOLOR", (0, 0), (-1, 0), INK_0),
         ("TEXTCOLOR", (0, 1), (0, -1), PLASMA),
         ("TEXTCOLOR", (1, 1), (-1, -1), INK_100),
-        ("TEXTCOLOR", (2, 1), (2, 1), BID),
-        ("TEXTCOLOR", (5, 1), (5, 1), BID),
-        ("TEXTCOLOR", (5, 2), (5, 2), ASK),
+        ("TEXTCOLOR", (5, 1), (5, 2), BID),   # correctness 100% (rows 1-2) green
+        ("TEXTCOLOR", (5, 3), (5, 3), ASK),   # correctness 18% (cpp) red
+        ("TEXTCOLOR", (6, 1), (6, 2), BID),   # anomaly clean green
+        ("TEXTCOLOR", (6, 3), (6, 3), ASK),   # anomaly flag red
         ("BACKGROUND", (0, 0), (-1, 0), PANEL_BD),
         ("BACKGROUND", (0, 1), (-1, -1), PANEL),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
         ("BOX", (0, 0), (-1, -1), 0.4, PANEL_BD),
         ("INNERGRID", (0, 0), (-1, -1), 0.3, PANEL_BD),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
     story.append(t)
     story.append(Paragraph(
-        "Note that the C++ skeleton's anomaly score (0.91) is the platform "
-        "<i>doing its job</i> — the file is an intentionally incomplete "
-        "matching engine, and the validator correctly flags it.",
+        "The contrast is the platform <i>doing its job</i>: two correct engines "
+        "score 100% correctness and a <font color='#16C784'>clean</font> 0.35 anomaly, "
+        "while the intentionally-incomplete C++ skeleton — fast (95 ms p99, 50k TPS) "
+        "but only 18% correct — is <font color='#EA3943'>flagged</font> at 0.85. Raw "
+        "speed alone does not win; the validator and anomaly detector catch an engine "
+        "that doesn't actually match orders.",
         BODY_DIM,
     ))
 

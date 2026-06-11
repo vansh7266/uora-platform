@@ -37,26 +37,26 @@ TITLE = ParagraphStyle("Title", fontName="Helvetica-Bold", fontSize=32,
                        spaceAfter=8)
 SUB = ParagraphStyle("Sub", fontName="Courier", fontSize=10, leading=14,
                      textColor=PLASMA, alignment=TA_LEFT, spaceAfter=20)
-H1 = ParagraphStyle("H1", fontName="Helvetica-Bold", fontSize=18,
+H1 = ParagraphStyle("H1", fontName="Helvetica-Bold", fontSize=19,
                     leading=22, textColor=INK_0, spaceBefore=14,
                     spaceAfter=8)
-H2 = ParagraphStyle("H2", fontName="Helvetica-Bold", fontSize=13,
+H2 = ParagraphStyle("H2", fontName="Helvetica-Bold", fontSize=14,
                     leading=17, textColor=PLASMA, spaceBefore=10,
                     spaceAfter=4)
-H3 = ParagraphStyle("H3", fontName="Helvetica-Bold", fontSize=10,
+H3 = ParagraphStyle("H3", fontName="Helvetica-Bold", fontSize=11,
                     leading=14, textColor=INK_0, spaceBefore=6, spaceAfter=2)
-BODY = ParagraphStyle("Body", fontName="Helvetica", fontSize=10,
+BODY = ParagraphStyle("Body", fontName="Helvetica", fontSize=11,
                       leading=14.5, textColor=INK_100, alignment=TA_JUSTIFY,
                       spaceAfter=6)
-VO = ParagraphStyle("VO", fontName="Helvetica-Oblique", fontSize=10,
+VO = ParagraphStyle("VO", fontName="Helvetica-Oblique", fontSize=11,
                     leading=14.5, textColor=INK_0, alignment=TA_JUSTIFY,
                     leftIndent=12, rightIndent=12,
                     backColor=PANEL, borderColor=PLASMA, borderWidth=0.5,
                     borderPadding=8, spaceBefore=4, spaceAfter=8)
-ACT = ParagraphStyle("Action", fontName="Courier", fontSize=9, leading=13,
+ACT = ParagraphStyle("Action", fontName="Courier", fontSize=9.5, leading=13,
                      textColor=BID, leftIndent=12, rightIndent=12,
                      spaceBefore=2, spaceAfter=4)
-NOTE = ParagraphStyle("Note", fontName="Helvetica-Oblique", fontSize=8.5,
+NOTE = ParagraphStyle("Note", fontName="Helvetica-Oblique", fontSize=9.5,
                       leading=12, textColor=INK_400, leftIndent=12,
                       rightIndent=12, spaceAfter=8)
 EYEBROW = ParagraphStyle("Eye", fontName="Courier-Bold", fontSize=8,
