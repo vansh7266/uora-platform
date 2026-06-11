@@ -7,30 +7,54 @@ import { GlassPanel, PanelHeader, PanelTitle } from "@/components/ui/GlassPanel"
 import { Badge } from "@/components/ui/Badge";
 import { Chart } from "@/components/ui/Chart";
 
-// ── Simulated live orderbook depth ────────────────────────────────────────────
+// ── Live orderbook depth ──────────────────────────────────────────────────────
+// Fetches from the reference engine's /api/v1/orderbook endpoint (real data).
+// Falls back to an empty state if the reference engine isn't reachable rather
+// than fabricating fake levels.
 
 type DepthLevel = [number, number]; // [price, cumSize]
 
-function genDepth(side: "bid" | "ask", mid: number): DepthLevel[] {
-  const levels: DepthLevel[] = [];
+interface SnapshotLevel {
+  price: string;
+  quantity: number;
+  order_count: number;
+}
+
+function cumulate(levels: SnapshotLevel[], descending = false): DepthLevel[] {
   let cum = 0;
-  for (let i = 0; i < 20; i++) {
-    const price = side === "bid" ? mid - (i + 1) * 0.25 : mid + (i + 1) * 0.25;
-    cum += Math.floor(Math.random() * 500 + 50);
-    levels.push([parseFloat(price.toFixed(2)), cum]);
+  const out: DepthLevel[] = [];
+  for (const l of levels) {
+    cum += l.quantity;
+    out.push([parseFloat(l.price), cum]);
   }
-  return side === "bid" ? levels.reverse() : levels;
+  return descending ? out.reverse() : out;
 }
 
 function OrderbookDepthChart() {
-  const [bids, setBids] = useState<DepthLevel[]>(() => genDepth("bid", 18432.5));
-  const [asks, setAsks] = useState<DepthLevel[]>(() => genDepth("ask", 18432.5));
+  const [bids, setBids] = useState<DepthLevel[]>([]);
+  const [asks, setAsks] = useState<DepthLevel[]>([]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setBids(genDepth("bid", 18432.5));
-      setAsks(genDepth("ask", 18432.5));
-    }, 1200);
+    // The reference engine is the canonical LOB the validator scores against,
+    // exposed on :8081 for local dev. In production, set
+    // NEXT_PUBLIC_REFERENCE_ENGINE_URL.
+    const refUrl =
+      process.env.NEXT_PUBLIC_REFERENCE_ENGINE_URL ||
+      "http://localhost:8081";
+
+    const fetchSnapshot = async () => {
+      try {
+        const res = await fetch(`${refUrl}/api/v1/orderbook`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        setBids(cumulate((data.bids ?? []) as SnapshotLevel[], true));
+        setAsks(cumulate((data.asks ?? []) as SnapshotLevel[], false));
+      } catch {
+        // Reference engine offline; chart stays in empty state.
+      }
+    };
+    fetchSnapshot();
+    const id = setInterval(fetchSnapshot, 2000);
     return () => clearInterval(id);
   }, []);
 
@@ -104,6 +128,18 @@ function OrderbookDepthChart() {
       },
     ],
   }), [bids, asks, allPrices, maxCum]);
+
+  if (!bids.length && !asks.length) {
+    return (
+      <div className="flex items-center justify-center h-[200px] text-center px-6">
+        <p className="text-[10px] font-mono text-[var(--ink-500)] leading-relaxed max-w-xs">
+          Reference engine snapshot unavailable. Make sure the engine is
+          running on the configured URL — depth fills here as soon as the
+          first order rests.
+        </p>
+      </div>
+    );
+  }
 
   return <Chart option={option} height={200} />;
 }

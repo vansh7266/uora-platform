@@ -35,6 +35,17 @@ except ImportError:
 
 app = FastAPI(title="UORA Reference Contestant Engine", version="2.0.0")
 
+# Allow the dashboard to fetch /api/v1/orderbook for the live-depth chart.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
 # Singleton orderbook — the single source of truth for matching
 lob = OrderBook()
 seen_order_ids: set[str] = set()
