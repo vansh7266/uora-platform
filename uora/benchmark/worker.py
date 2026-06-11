@@ -174,9 +174,57 @@ class BenchmarkWorker:
             **extra,
         })
 
+    async def _new_db_pool(self) -> Any:
+        return await asyncpg.create_pool(
+            host=DB_HOST, port=DB_PORT, user=DB_USER,
+            password=require_setting("TIMESCALE_PASSWORD", DB_PASSWORD),
+            database=DB_NAME, min_size=1, max_size=5,
+        )
+
+    async def _ensure_db_pool(self) -> None:
+        """Recreate the worker's pool if it's missing or closed. A long-running worker
+        reuses one pool across jobs; if anything closes it, later jobs would fail with
+        'pool is closed' until restart. Self-heal instead."""
+        closed = (
+            self._db_pool is None
+            or getattr(self._db_pool, "_closed", False)
+            or self._db_pool.is_closing()
+        )
+        if closed:
+            self._db_pool = await self._new_db_pool()
+
+    async def _db_execute(self, fn) -> None:
+        """Acquire a connection and run ``fn(conn)``, recreating the pool once if it
+        turns out to be closed at acquire time (the state checks above don't always
+        catch every closed-pool variant on macOS / asyncpg)."""
+        await self._ensure_db_pool()
+        try:
+            async with self._db_pool.acquire() as conn:
+                await fn(conn)
+        except Exception as exc:
+            if "pool is closed" in str(exc).lower() or "interface" in type(exc).__name__.lower():
+                logger.warning("DB pool was closed mid-job — recreating and retrying once")
+                self._db_pool = await self._new_db_pool()
+                async with self._db_pool.acquire() as conn:
+                    await fn(conn)
+            else:
+                raise
+
     async def _record_latency_events(self, submission_id: str, records: list[dict[str, Any]]) -> None:
-        assert self._db_pool is not None
-        async with self._db_pool.acquire() as conn:
+        rows = [
+            (
+                submission_id,
+                str(record.get("worker_id", "")),
+                str(record.get("result", {}).get("order_id") or record.get("action", {}).get("order_id") or ""),
+                str(record.get("action", {}).get("type", "order")),
+                int(record.get("latency_ns", 0) or 0),
+                int(record.get("result", {}).get("status_code", 200) or 200),
+                bool(record.get("success", True)),
+            )
+            for record in records
+        ]
+
+        async def _do(conn):
             await conn.executemany(
                 """
                 INSERT INTO latency_events (
@@ -185,23 +233,25 @@ class BenchmarkWorker:
                 )
                 VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
                 """,
-                [
-                    (
-                        submission_id,
-                        str(record.get("worker_id", "")),
-                        str(record.get("result", {}).get("order_id") or record.get("action", {}).get("order_id") or ""),
-                        str(record.get("action", {}).get("type", "order")),
-                        int(record.get("latency_ns", 0) or 0),
-                        int(record.get("result", {}).get("status_code", 200) or 200),
-                        bool(record.get("success", True)),
-                    )
-                    for record in records
-                ],
+                rows,
             )
 
+        await self._db_execute(_do)
+
     async def _record_validation(self, submission_id: str, report: dict[str, Any]) -> None:
-        assert self._db_pool is not None
-        async with self._db_pool.acquire() as conn:
+        violation_rows = [
+            (
+                submission_id,
+                int(violation["level"]),
+                str(violation["order_id"]),
+                json.dumps(violation["expected"], default=str),
+                json.dumps(violation["actual"], default=str),
+                str(violation["description"]),
+            )
+            for violation in report["violations"]
+        ]
+
+        async def _do(conn):
             await conn.execute(
                 """
                 INSERT INTO validation_results (
@@ -214,7 +264,7 @@ class BenchmarkWorker:
                 int(report["total_actions"]),
                 int(report["violations_count"]),
             )
-            if report["violations"]:
+            if violation_rows:
                 await conn.executemany(
                     """
                     INSERT INTO correctness_violations (
@@ -222,18 +272,10 @@ class BenchmarkWorker:
                     )
                     VALUES (NOW(), $1, $2, $3, $4::jsonb, $5::jsonb, $6)
                     """,
-                    [
-                        (
-                            submission_id,
-                            int(violation["level"]),
-                            str(violation["order_id"]),
-                            json.dumps(violation["expected"], default=str),
-                            json.dumps(violation["actual"], default=str),
-                            str(violation["description"]),
-                        )
-                        for violation in report["violations"]
-                    ],
+                    violation_rows,
                 )
+
+        await self._db_execute(_do)
 
     @staticmethod
     def _build_features(
@@ -241,29 +283,70 @@ class BenchmarkWorker:
         results: dict[str, Any],
         attempted_actions: list[dict[str, Any]],
         contestant_responses: list[dict[str, Any]],
+        clean_latencies: Optional[list[int]] = None,
     ) -> Optional[Any]:
         """Extract the 8-feature anomaly vector from a completed benchmark run.
 
         Done in the worker because pattern_correlation and state_transition_ged need the
         full action/response stream, which the scoring engine (DB-only) does not have.
         Best-effort: returns None on failure so scoring falls back to latency-only features.
+
+        Feature sourcing (each from the pass that gives the cleanest signal):
+          • latency_entropy / p99_to_p50_ratio / latency_trend_slope → CLEAN
+            single-threaded correctness-pass latencies. The concurrent run's tail on a
+            co-located host is confounded by client-side scheduling.
+          • throughput_variance / error_rate → CONCURRENT run. The clean pass is too
+            short to produce a meaningful time-bucketed throughput series (it collapses
+            to ~0, which sits outside the model's healthy manifold and spuriously flags
+            a good engine), so throughput stats must come from the real load run.
+          • pattern_correlation / volume_conservation / state_transition_ged → action and
+            response streams.
         """
         try:
             from uora.ml_detector.detector import MLAnomalyDetector
 
-            latencies = [int(r.get("latency_ns", 0) or 0) for r in results.get("results", [])]
-            total = int(results.get("total_orders", len(latencies)) or len(latencies) or 1)
+            concurrent_latencies = [
+                int(r.get("latency_ns", 0) or 0) for r in results.get("results", [])
+            ]
+            # Prefer clean correctness-pass latencies for latency SHAPE; fall back to
+            # concurrent if the clean pass is unavailable.
+            latency_signal = (
+                [int(x) for x in clean_latencies if int(x) > 0]
+                if clean_latencies
+                else concurrent_latencies
+            )
+            total = int(results.get("total_orders", len(concurrent_latencies))
+                        or len(concurrent_latencies) or 1)
             errors = int(results.get("failed_orders", 0) or 0)
-            return MLAnomalyDetector.extract_features(
+            features = MLAnomalyDetector.extract_features(
                 submission_id=submission_id,
-                latencies=latencies or [1_000_000],
+                latencies=latency_signal or [1_000_000],
                 expected_actions=attempted_actions,
                 actual_actions=contestant_responses,
                 errors=errors,
                 total=total,
             )
+
+            # Override throughput_variance with the REAL load-run value. extract_features
+            # derived it from the (clean, tiny) latency_signal, which is not a valid
+            # throughput series. Recompute it from the concurrent latencies.
+            if len(concurrent_latencies) >= 2 and features is not None:
+                try:
+                    conc = MLAnomalyDetector.extract_features(
+                        submission_id=submission_id,
+                        latencies=concurrent_latencies,
+                        expected_actions=attempted_actions,
+                        actual_actions=contestant_responses,
+                        errors=errors,
+                        total=total,
+                    )
+                    features.throughput_variance = conc.throughput_variance
+                except Exception:
+                    pass
+
+            return features
         except Exception as exc:
-            logger.warning("Feature extraction failed for %s: %s", submission_id, exc)
+            logger.warning("Feature extraction failed for %s: %s", submission_id, exc, exc_info=True)
             return None
 
     # ── Resource metering helpers ─────────────────────────────────────────
@@ -347,6 +430,15 @@ class BenchmarkWorker:
         benchmark is executing.  Falls back to 1.0 on any error (Docker not
         available, Kubernetes deployment, permission issues, etc.).
         """
+        # No Docker on the host (local/dev runs) → skip sampling entirely. Spawning
+        # `docker` via asyncio.create_subprocess_exec when the binary is missing is both
+        # pointless and, on macOS, a source of event-loop child-watcher instability that
+        # can disturb other connections on the loop. Fall back to the 1.0 baseline.
+        import shutil
+        if shutil.which("docker") is None:
+            logger.debug("docker not on PATH — skipping resource sampling (penalty 1.0)")
+            return 1.0
+
         container = self._container_name_from_url(target_url)
         if not container:
             logger.debug("Cannot derive container name from %s — skipping resource sampling", target_url)
@@ -489,7 +581,9 @@ class BenchmarkWorker:
                 # run_benchmark below measures latency/throughput only — its
                 # out-of-order, minted-id traffic cannot be diffed against a
                 # sequential reference replay.
-                correctness_responses = await coordinator.run_correctness_pass(actions)
+                correctness_responses, correctness_latencies = (
+                    await coordinator.run_correctness_pass(actions)
+                )
                 await coordinator.run_benchmark(DURATION_SEC)
                 results = await coordinator.get_results()
             finally:
@@ -542,10 +636,15 @@ class BenchmarkWorker:
             # Build the full 8-feature anomaly vector HERE, where the action/response
             # stream lives, so pattern_correlation and state_transition_ged are computed
             # for real instead of being passed to the scorer as 0.0. The action-stream
-            # features use the deterministic correctness pass (clean, in-order); latency
-            # and error_rate still come from the concurrent `results`.
+            # features use the deterministic correctness pass (clean, in-order). The
+            # latency-shape features (entropy, trend-slope, p99/p50 ratio) also use the
+            # CLEAN single-threaded correctness-pass latencies — on a co-located host
+            # the concurrent run's tail is dominated by client-side scheduling, which
+            # would otherwise spuriously flag every legitimate engine. error_rate still
+            # comes from the concurrent `results`.
             features = self._build_features(
-                submission_id, results, actions, correctness_responses
+                submission_id, results, actions, correctness_responses,
+                clean_latencies=correctness_latencies,
             )
             # Use the validator's L4 result for the determinism feature. extract_features
             # can only diff the action stream (which lacks reference statuses); the
@@ -553,6 +652,16 @@ class BenchmarkWorker:
             # its similarity is the correct signal. (1 - determinism) = divergence.
             if features is not None and "determinism" in report:
                 features.state_transition_ged = round(1.0 - float(report["determinism"]), 4)
+            if features is not None:
+                logger.debug(
+                    "anomaly features %s entropy=%.0f patcorr=%.3f vol=%.1f ged=%.3f "
+                    "slope=%.4f thrvar=%.1f err=%.4f p99p50=%.2f",
+                    submission_id,
+                    features.latency_entropy, features.pattern_correlation,
+                    features.volume_conservation_delta, features.state_transition_ged,
+                    features.latency_trend_slope, features.throughput_variance,
+                    features.error_rate, features.p99_to_p50_ratio,
+                )
             # Resource penalty reported by the pipeline (the builder writes resources:{id}).
             resource_penalty = await self._read_resource_penalty(submission_id)
 

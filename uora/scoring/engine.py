@@ -170,7 +170,12 @@ class ScoringEngine:
         }
 
     async def _ensure_pool(self) -> None:
-        if _pool is None:
+        # Recreate the global pool if it's missing OR has been closed. A long-running
+        # worker shares this module-level pool across jobs; if any path closed it, every
+        # later job would otherwise fail with "pool is closed".
+        global _pool
+        if _pool is None or getattr(_pool, "_closed", False) or _pool.is_closing():
+            _pool = None
             await startup(**self._db_config)
 
     async def compute_score(

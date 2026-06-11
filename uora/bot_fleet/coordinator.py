@@ -155,13 +155,19 @@ class BotCoordinator:
 
     async def run_correctness_pass(
         self, actions: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[int]]:
         """Deterministic, single-bot, in-order replay of the *unique* scenario actions.
 
-        Returns responses aligned 1:1 with ``actions`` (same order), suitable for
-        ``CorrectnessValidator.validate_submission``. This is what L1–L4 correctness is
-        scored on — ``run_benchmark`` measures latency/throughput under concurrent load
-        with minted order ids and cannot be diffed against a sequential reference replay.
+        Returns ``(responses, latencies_ns)`` where responses are aligned 1:1 with
+        ``actions`` (same order), suitable for ``CorrectnessValidator.validate_submission``,
+        and ``latencies_ns`` are the per-action wall-clock latencies measured on this
+        single-threaded, in-order pass.
+
+        These clean latencies are the *engine-side* signal: one bot, no concurrency,
+        a warm book. The concurrent ``run_benchmark`` pass that follows measures
+        throughput and the loaded p50/p90/p99 tail, but on a co-located host its tail
+        is dominated by client-side scheduling, so anomaly latency-shape features are
+        derived from THESE clean numbers instead.
 
         Must run before ``run_benchmark`` so the engine's book is pristine.
         """
@@ -169,13 +175,16 @@ class BotCoordinator:
             raise RuntimeError("No workers — call start() first.")
         bot = self._bots[0]
         responses: list[dict[str, Any]] = []
+        latencies_ns: list[int] = []
         for action in actions:
             try:
-                responses.append(await bot.replay_action(action))
+                result, latency_ns = await bot.measure_latency(bot.replay_action(action))
+                responses.append(result)
+                latencies_ns.append(int(latency_ns))
             except Exception as exc:  # keep the stream 1:1 even on a failed call
                 responses.append({"status": "error", "error": str(exc)})
         logger.info("✓ Correctness pass — %d actions replayed deterministically", len(actions))
-        return responses
+        return responses, latencies_ns
 
     # ── Results ────────────────────────────────────────────────────────────────
 
