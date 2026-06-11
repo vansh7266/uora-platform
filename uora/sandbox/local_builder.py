@@ -176,9 +176,22 @@ def _compile(language: str, work_dir: Path) -> tuple[list[str], str]:
         )
         if not cpp_files:
             raise RuntimeError("No .cpp source found")
+
+        # Provide common headers (httplib.h) automatically if missing — lets
+        # contestants upload a single .cpp that includes "httplib.h" without
+        # bundling the 700KB header themselves.
+        examples_root = Path(__file__).resolve().parents[2] / "examples"
+        for header in ("httplib.h",):
+            src = examples_root / header
+            dst = work_dir / header
+            if src.is_file() and not dst.exists():
+                shutil.copy(src, dst)
+                log_lines.append(f"→ provided header: {header}")
+
         binary = work_dir / "engine"
         cmd = [
             "g++", "-O2", "-std=c++20", "-pthread",
+            "-I", str(work_dir),
             "-o", str(binary), *[str(f) for f in cpp_files],
         ]
         log_lines.append("$ " + " ".join(cmd))
