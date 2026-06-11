@@ -119,17 +119,24 @@ class MLAnomalyDetector:
         def g(mean: float, std: float, lo: float, hi: float) -> float:
             return float(min(hi, max(lo, rng.normal(mean, std))))
 
+        # Distributions widened to match what a REAL, correct engine produces on a
+        # co-located benchmark host with clean correctness-pass latencies:
+        #   • fast engines have LOW latency entropy (~0.2–2 ms std), not 4–10 ms
+        #   • warm-up makes the trend slope strongly negative early on (down to ~−1.5)
+        #   • a short pass over a growing book yields elevated, noisy p99/p50 ratios
+        # Centering the cloud on these realities keeps healthy engines in the dense
+        # inlier middle (low anomaly score) while cheats/crashes still fall far outside.
         for i in range(n):
             self.normal_profiles.append(BenchmarkFeatures(
                 submission_id=f"synthetic-normal-{i}",
-                latency_entropy=g(4_000_000, 3_500_000, 100_000, 50_000_000),  # ~0.1–10ms std
+                latency_entropy=g(1_200_000, 1_400_000, 50_000, 50_000_000),  # ~0.05–5ms std, fast-engine centred
                 pattern_correlation=g(0.12, 0.12, 0.0, 0.6),         # low correlation
                 volume_conservation_delta=g(2, 3, 0, 30),            # near-zero
                 state_transition_ged=g(0.05, 0.06, 0.0, 0.4),        # deterministic
-                latency_trend_slope=g(-0.05, 0.12, -0.5, 0.3),       # warmup (−) healthy; rising (+) = leak
-                throughput_variance=g(18_000, 16_000, 500, 120_000),  # real loopback runs ~8k–40k
+                latency_trend_slope=g(-0.2, 0.45, -1.6, 1.2),        # warmup (−) healthy; mild rise tolerated
+                throughput_variance=g(12_000, 14_000, 0, 120_000),   # real loopback runs ~0–40k
                 error_rate=g(0.01, 0.012, 0.0, 0.06),                # <~3% errors
-                p99_to_p50_ratio=g(3.3, 1.3, 1.0, 8.0),              # healthy tail (p99 a few× p50)
+                p99_to_p50_ratio=g(4.5, 3.0, 1.0, 20.0),             # co-located tail can be 5–15×
             ))
 
     # ─── Detection ──────────────────────────────────────────────────────────
@@ -158,17 +165,23 @@ class MLAnomalyDetector:
         anomaly_score = 1.0 / (1.0 + math.exp(decision_score * 20.0))
         anomaly_score = max(0.0, min(1.0, anomaly_score))
 
+        # HARD rules — only signals that unambiguously indicate cheating or a broken
+        # engine, independent of the benchmark host. These force a high anomaly score.
+        #
+        # latency_trend_slope and p99_to_p50_ratio are intentionally NOT hard rules.
+        # On a co-located benchmark host (bot fleet + engine on one machine), over a
+        # short correctness pass where the order book legitimately grows, both are
+        # confounded: a perfectly correct engine routinely shows a positive slope
+        # (later matches are slower as depth builds) and an elevated tail ratio (one
+        # cold first request). They stay as IsolationForest inputs and in the
+        # explanation, but on their own must not flag a 100%-correct engine.
         rule_triggered = (
             features.pattern_correlation > 0.95
             # Near-zero latency std (< 0.1ms across thousands of requests) ⇒ faked/
             # throttled clock. A merely *fast, consistent* engine has std ~0.5ms and
             # must NOT trip this — 1e6 (1ms) flagged every legitimate sub-ms engine.
             or (0 < features.latency_entropy < 100_000)
-            # Rising latency = possible memory leak. Only positive drift is suspect;
-            # negative (warmup/JIT) is healthy. > 0.5 ≈ latency grew 50%+ over the run.
-            or features.latency_trend_slope > 0.5
             or features.error_rate > 0.1
-            or features.p99_to_p50_ratio > 10.0
             or features.volume_conservation_delta > 100
             or features.state_transition_ged > 0.5
             or features.throughput_variance > 1e10
