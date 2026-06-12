@@ -352,6 +352,18 @@ def data_flow_diagram():
             d.add(make_arrow(x1, y_cursor, x2, y_cursor, color=c, label=None))
             d.add(String((x1 + x2) / 2, y_cursor + 3, msg, fontName="Courier",
                          fontSize=7, fillColor=INK_300, textAnchor="middle"))
+        # Update last self-call label placement: if src is the rightmost lane,
+        # render the label to the LEFT of the loop so it doesn't run off the
+        # drawing. (Was overwriting `x1+24` even for the last lane → text
+        # clipped past the right edge of the PDF.)
+        if src == dst and src == n - 1:
+            # Remove the prior label we just added, then re-add on the left
+            d.contents = [c for c in d.contents
+                          if not (isinstance(c, String)
+                                  and c.text == msg
+                                  and c.x == x1 + 24)]
+            d.add(String(x1 - 18, y_cursor - 2, msg, fontName="Courier",
+                         fontSize=7, fillColor=INK_300, textAnchor="end"))
     return d
 
 
@@ -374,6 +386,7 @@ def security_stack_diagram():
     total_h = H - 50
     base_x = 40
     base_y = 25
+    n_layers = len(layers)
     for i, (name, sub, c) in enumerate(layers):
         inset = i * 16
         x = base_x + inset
@@ -384,10 +397,15 @@ def security_stack_diagram():
             continue
         d.add(Rect(x, y, w, h, fillColor=PANEL, strokeColor=c,
                    strokeWidth=0.8, rx=3, ry=3))
-        d.add(String(x + 10, y + h - 14, name, fontName="Helvetica-Bold",
+        # Title lives in the 16-px strip just inside the top edge — never
+        # gets overlapped by the next inner rectangle (which is inset by 16).
+        d.add(String(x + 10, y + h - 12, name, fontName="Helvetica-Bold",
                      fontSize=9, fillColor=INK_0))
-        d.add(String(x + 10, y + h - 28, sub, fontName="Courier",
-                     fontSize=7, fillColor=INK_400))
+        # Only the innermost layer shows a sub-description (everything else
+        # would be covered by the next concentric ring).
+        if i == n_layers - 1:
+            d.add(String(x + 10, y + h - 26, sub, fontName="Courier",
+                         fontSize=7, fillColor=INK_400))
     return d
 
 
@@ -586,6 +604,7 @@ def build(path: str) -> None:
 
     # ─── 2. Problem ────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.4*cm))
+    story.append(PageBreak())
     story.append(Paragraph("2.  Problem Statement", H1))
     story.append(Paragraph(
         "Matching engines sit on the critical path of every electronic "
@@ -610,6 +629,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 3. Solution Overview ──────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("3.  Solution Overview", H1))
     story.append(Paragraph(
         "UORA decomposes the problem into four horizontal layers that "
@@ -627,6 +647,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 4. Pipeline ───────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("4.  Submission Pipeline", H1))
     story.append(Paragraph(
         "Every contestant submission moves deterministically through six "
@@ -700,6 +721,7 @@ def build(path: str) -> None:
     story.append(t)
 
     # ─── 5. Data Flow ──────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("5.  End-to-End Data Flow", H1))
     story.append(Paragraph(
         "The sequence diagram below shows a single submission from upload "
@@ -717,6 +739,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 6. Security ───────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("6.  Security Model", H1))
     story.append(Paragraph(
         "Contestant code is, by definition, untrusted. The sandbox stack "
@@ -765,6 +788,7 @@ def build(path: str) -> None:
     story.append(t)
 
     # ─── 7. Validation ─────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("7.  Validation: L1 → L4 + GED", H1))
     story.append(Paragraph(
         "Speed is meaningless without correctness. UORA validates every "
@@ -789,6 +813,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 8. Scoring ────────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("8.  Composite Scoring", H1))
     story.append(scoring_formula_diagram())
     story.append(Paragraph(
@@ -806,6 +831,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 9. Anomaly detection ──────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("9.  ML Anomaly Detection", H1))
     story.append(Paragraph(
         "An IsolationForest model trained on 8 hand-crafted features "
@@ -829,6 +855,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 10. Tech stack ────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("10.  Technology Stack", H1))
     cell_h2 = ParagraphStyle("CellH2", fontName="Helvetica-Bold", fontSize=9,
                              textColor=INK_0, leading=12.5)
@@ -883,6 +910,7 @@ def build(path: str) -> None:
     story.append(t)
 
     # ─── 11. Testing ──────────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("11.  Testing Strategy", H1))
     story.append(Paragraph(
         "We treat tests as part of the deliverable, not an afterthought. "
@@ -933,6 +961,7 @@ def build(path: str) -> None:
     story.append(t)
 
     # ─── 12. Verified results ────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("12.  Verified End-to-End Results", H1))
     story.append(Paragraph(
         "These numbers were collected by running the actual pipeline "
@@ -982,6 +1011,7 @@ def build(path: str) -> None:
     ))
 
     # ─── 13. Future work ─────────────────────────────────────────────────
+    story.append(PageBreak())
     story.append(Paragraph("13.  Roadmap", H1))
     story.append(Paragraph(
         "Concrete items the architecture is ready for but doesn't ship in "
@@ -1006,37 +1036,6 @@ def build(path: str) -> None:
         story.append(Paragraph(f"<font color='#00D4FF'>{title}</font> {desc}",
                                BODY))
 
-    # ─── 14. Submission checklist ────────────────────────────────────────
-    story.append(Paragraph("14.  Submission Checklist", H1))
-    chk = [
-        ["Item",                        "Reference"],
-        ["Team Name",                    "UORA  (same across all submissions)"],
-        ["Participant",                  "Vansh Gupta  ·  IIIT Bhopal  ·  IT, 2nd Year  ·  Solo"],
-        ["Design Document (this PDF)",   "submission-docs/UORA-Design-Document.pdf"],
-        ["Demo Video Script",            "submission-docs/UORA-Demo-Video-Script.pdf"],
-        ["Demo Voiceover (8 min)",       "submission-docs/UORA-Voiceover-8min.pdf"],
-        ["Source Code Repository",       "github.com/vansh7266/uora-platform"],
-        ["Live Demo URL",                "http://35.254.55.195:3000  (Google Cloud)"],
-        ["Tests Passing",                "46 pytest + 4 detector self-tests · tsc clean"],
-    ]
-    t = Table(chk, colWidths=[5.5*cm, 10*cm])
-    t.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, 1), (-1, -1), "Courier"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-        ("TEXTCOLOR", (0, 0), (-1, 0), INK_0),
-        ("TEXTCOLOR", (0, 1), (0, -1), PLASMA),
-        ("TEXTCOLOR", (1, 1), (-1, -1), INK_100),
-        ("BACKGROUND", (0, 0), (-1, 0), PANEL_BD),
-        ("BACKGROUND", (0, 1), (-1, -1), PANEL),
-        ("BOX", (0, 0), (-1, -1), 0.4, PANEL_BD),
-        ("INNERGRID", (0, 0), (-1, -1), 0.3, PANEL_BD),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story.append(t)
     story.append(Spacer(1, 0.8*cm))
     story.append(Paragraph(
         "<font color='#00D4FF'>———</font>"
