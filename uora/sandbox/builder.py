@@ -801,47 +801,55 @@ ENTRYPOINT ["python", "-u", "{rel_entry}"]
 
         if not KUBERNETES_ENABLED:
             logger.info("Kubernetes is disabled. Deploying submission %s locally using Docker...", submission_id)
-            # Remove any existing container with the same name
-            await self._run_cmd("docker", "rm", "-f", pod_name)
-            
+
             # Rewrite image tag for the host docker daemon
             host_image_tag = image_tag.replace("registry:5000", "localhost:5000")
-            
-            # Run the compiled matching engine container locally
-            # In local Docker, compose creates network named backend or uora_backend.
-            # We first try 'uora_backend', then fallback to 'backend' or let it auto-select.
-            rc, stdout, stderr = await self._run_cmd(
-                "docker", "run", "-d",
-                "--name", pod_name,
-                "--network", "uora_backend",
-                host_image_tag
+
+            # Discover the actual backend network — Docker Compose names it
+            # "<project>_backend" where <project> is the compose project dir
+            # (e.g. "uora-platform_backend"). Probe at runtime so we don't
+            # hardcode the project name.
+            network_candidates: list[str] = []
+            rc_net, net_stdout, _ = await self._run_cmd(
+                "docker", "network", "ls", "--format", "{{.Name}}"
             )
-            
+            if rc_net == 0:
+                all_networks = net_stdout.decode(errors="replace").splitlines()
+                # Prefer any *_backend network (matches uora-platform_backend, uora_backend, etc.)
+                network_candidates = [n.strip() for n in all_networks if n.strip().endswith("_backend")]
+                # Fall back to the legacy names if no *_backend network exists yet
+                for legacy in ("uora_backend", "backend"):
+                    if legacy in all_networks and legacy not in network_candidates:
+                        network_candidates.append(legacy)
+            # Last-ditch: default bridge
+            network_candidates.append(None)  # type: ignore[arg-type]
+
+            last_err = ""
+            rc = 1
+            stdout = stderr = b""
+            for network in network_candidates:
+                # ALWAYS clean up any prior container by this name before each
+                # attempt — a failed `docker run` can leave a stub in "Created"
+                # state that blocks the next attempt with "name already in use".
+                await self._run_cmd("docker", "rm", "-f", pod_name)
+
+                cmd = ["docker", "run", "-d", "--name", pod_name]
+                if network:
+                    cmd += ["--network", network]
+                cmd.append(host_image_tag)
+                rc, stdout, stderr = await self._run_cmd(*cmd)
+                if rc == 0:
+                    logger.info("Deployed %s on network=%s", pod_name, network or "<default>")
+                    break
+                last_err = stderr.decode(errors="replace")
+                logger.warning("Deploy attempt on network=%s failed: %s", network or "<default>", last_err)
+
             if rc != 0:
-                logger.warning("Failed to start Docker container on 'uora_backend' network: %s. Retrying with 'backend'...", stderr.decode(errors="replace"))
-                rc, stdout, stderr = await self._run_cmd(
-                    "docker", "run", "-d",
-                    "--name", pod_name,
-                    "--network", "backend",
-                    host_image_tag
-                )
-            
-            if rc != 0:
-                logger.warning("Failed to start Docker container on 'backend' network: %s. Retrying on default bridge...", stderr.decode(errors="replace"))
-                rc, stdout, stderr = await self._run_cmd(
-                    "docker", "run", "-d",
-                    "--name", pod_name,
-                    host_image_tag
-                )
-                
-            if rc != 0:
-                raise RuntimeError(f"Local docker container deployment failed (rc={rc}): {stderr.decode(errors='replace')}")
-                
-            logger.info("Deployed contestant engine locally as Docker container: %s", pod_name)
-            
+                raise RuntimeError(f"Local docker container deployment failed (rc={rc}): {last_err}")
+
             # Wait for container to be healthy before proceeding
             await self._wait_for_container_health(pod_name, timeout=30.0)
-            
+
             return pod_name
 
         # Standard Kubernetes deployment path
