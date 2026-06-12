@@ -61,8 +61,20 @@ EYEBROW = ParagraphStyle("Eye", fontName="Courier-Bold", fontSize=9,
 
 SEGMENTS = [
     (
+        "Segment 0 — Introduction",
+        "0:00 – 0:30",
+        "Title card: UORA logo, team name, participant card. Hold for 30 seconds.",
+        "Hello, and welcome. My name is Vansh Gupta. I am a second-year Information "
+        "Technology student at the Indian Institute of Information Technology, Bhopal — "
+        "I I I T Bhopal. I am competing in the I I C P C twenty twenty-six hackathon "
+        "as a solo participant under the team name UORA. Over the next eight minutes, "
+        "I will walk you through what UORA is, how it is built, and a live demonstration "
+        "running on Google Cloud. Everything you see is real — real benchmarks, real "
+        "containers, real telemetry. Let us begin.",
+    ),
+    (
         "Segment 1 — The Hook",
-        "0:00 – 0:50",
+        "0:30 – 1:20",
         "Landing page hero, animated latency stream pulsing on the right.",
         "Every electronic exchange on the planet runs on a single piece of software "
         "called a matching engine. It is the component that takes every buy order and "
@@ -75,11 +87,11 @@ SEGMENTS = [
         "hand-written load scripts. A spreadsheet of latencies. A visual glance at an "
         "order book. There has never been a single platform that proves an engine is "
         "both fast and correct, under real pressure, with results anyone can reproduce. "
-        "That is the problem we set out to solve. This is UORA.",
+        "That is the problem I set out to solve. This is UORA.",
     ),
     (
         "Segment 2 — What UORA Is",
-        "0:50 – 1:45",
+        "1:20 – 2:15",
         "Scroll the landing page: hero stats, six-stage pipeline, feature cards.",
         "UORA stands for Unified Orderbook Resilience Architecture. In one sentence, it "
         "is a distributed benchmarking platform that takes a contestant's matching "
@@ -97,7 +109,7 @@ SEGMENTS = [
     ),
     (
         "Segment 3 — The Architecture",
-        "1:45 – 2:50",
+        "2:15 – 3:20",
         "Architecture section: the four coloured layer pills; hover the components.",
         "Under the hood, UORA is built as four independent layers, and the key design "
         "decision is that they are completely decoupled. The first layer handles "
@@ -116,7 +128,7 @@ SEGMENTS = [
     ),
     (
         "Segment 4 — Security & Sandboxing",
-        "2:50 – 3:45",
+        "3:20 – 4:15",
         "Security stack diagram; the nested isolation layers.",
         "Now, there is an obvious danger here. We are taking untrusted code, written by "
         "someone we have never met, and running it on our infrastructure at full load. "
@@ -135,7 +147,7 @@ SEGMENTS = [
     ),
     (
         "Segment 5 — Validation: L1 to L4",
-        "3:45 – 4:50",
+        "4:15 – 5:20",
         "Validation funnel diagram L1→L4; then the dashboard Validation tab.",
         "Speed without correctness is worthless. An engine that is blazingly fast but "
         "fills orders in the wrong sequence is not a fast engine — it is a broken one. "
@@ -153,7 +165,7 @@ SEGMENTS = [
     ),
     (
         "Segment 6 — Scoring & Anomaly Detection",
-        "4:50 – 6:00",
+        "5:20 – 6:30",
         "Composite score formula; then the ML anomaly section / radar chart.",
         "Once an engine passes validation, UORA computes a single composite score. The "
         "formula is deliberately simple and deliberately unforgiving. The numerator "
@@ -173,7 +185,7 @@ SEGMENTS = [
     ),
     (
         "Segment 7 — Live Demonstration",
-        "6:00 – 7:15",
+        "6:30 – 7:45",
         "Dashboard: upload advanced_engine.py, watch pipeline, then the scored card.",
         "But none of this means anything if it does not actually run. So let us prove "
         "it. Here is the live console, signed in to a real account. I am going to drop "
@@ -192,7 +204,7 @@ SEGMENTS = [
     ),
     (
         "Segment 8 — Close",
-        "7:15 – 8:00",
+        "7:45 – 8:30",
         "Leaderboard with the ranked entry; Reports tab → Download PDF; UORA logo.",
         "And the moment that score lands, the leaderboard updates for everyone, live, "
         "over a server-sent event stream. Open the reports tab, and the full performance "
@@ -202,8 +214,10 @@ SEGMENTS = [
         "to a ranked, reproducible leaderboard entry, in under thirty seconds, with "
         "every number honest and every number repeatable. It is the testing platform "
         "that high-frequency trading has always needed, and never had. Thank you for "
-        "watching. The complete source code is on GitHub, and we would love for you to "
-        "run it yourself.",
+        "watching. The complete source code is on GitHub, the platform is live on Google "
+        "Cloud, and I would love for you to run it yourself. This has been UORA, "
+        "submitted by Vansh Gupta, I I I T Bhopal, for I I C P C twenty twenty-six. "
+        "Thank you.",
     ),
 ]
 

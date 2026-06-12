@@ -506,7 +506,10 @@ def build(path: str) -> None:
         ["DOCUMENT",     "Design Document"],
         ["VERSION",      "2.0"],
         ["PROJECT",      "uora-platform"],
+        ["TEAM",         "UORA"],
+        ["PARTICIPANT",  "Vansh Gupta  ·  IIIT Bhopal  ·  IT, 2nd Year  ·  Solo"],
         ["REPOSITORY",   "github.com/vansh7266/uora-platform"],
+        ["LIVE",         "http://35.254.55.195:3000"],
         ["STACK",        "Python · FastAPI · Next.js 16 · TimescaleDB · Redis"],
         ["VALIDATION",   "L1-L4 + Graph-Edit-Distance"],
         ["PIPELINE",     "Submission -> Sandbox -> Fleet -> Validator -> Score"],
@@ -1007,12 +1010,14 @@ def build(path: str) -> None:
     story.append(Paragraph("14.  Submission Checklist", H1))
     chk = [
         ["Item",                        "Reference"],
-        ["Design Document (this PDF)",  "submission-docs/design-document.pdf"],
-        ["Demo Video Script",            "submission-docs/demo-video-script.pdf"],
+        ["Team Name",                    "UORA  (same across all submissions)"],
+        ["Participant",                  "Vansh Gupta  ·  IIIT Bhopal  ·  IT, 2nd Year  ·  Solo"],
+        ["Design Document (this PDF)",   "submission-docs/UORA-Design-Document.pdf"],
+        ["Demo Video Script",            "submission-docs/UORA-Demo-Video-Script.pdf"],
+        ["Demo Voiceover (8 min)",       "submission-docs/UORA-Voiceover-8min.pdf"],
         ["Source Code Repository",       "github.com/vansh7266/uora-platform"],
-        ["Live Demo URL",                "http://localhost:3000 (local stack)"],
-        ["Team Name",                    "Same across all individual submissions"],
-        ["Tests Passing",                "43 pytest + 17 doctests · tsc clean"],
+        ["Live Demo URL",                "http://35.254.55.195:3000  (Google Cloud)"],
+        ["Tests Passing",                "46 pytest + 4 detector self-tests · tsc clean"],
     ]
     t = Table(chk, colWidths=[5.5*cm, 10*cm])
     t.setStyle(TableStyle([
