@@ -45,10 +45,6 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 BUILD_TIMEOUT = int(os.getenv("BUILD_TIMEOUT", 60))
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", 50 * 1024 * 1024))  # 50MB
 
-# --- Google OAuth2 Config ---
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # --- API Token Auth ---
@@ -285,69 +281,10 @@ async def check_rate_limit(request: Request, auth_data: dict = Depends(require_a
     return auth_data
 
 
-# --- Google OAuth2 Endpoints ---
-@app.get("/auth/google")
-async def auth_google():
-    """Redirect to Google OAuth consent screen."""
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(500, "Google OAuth not configured")
-    auth_url = (
-        f"https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={GOOGLE_CLIENT_ID}&"
-        f"redirect_uri={GOOGLE_REDIRECT_URI}&"
-        f"response_type=code&"
-        f"scope=openid%20email%20profile&"
-        f"access_type=offline"
-    )
-    return RedirectResponse(url=auth_url)
-
-
-@app.get("/auth/google/callback")
-async def auth_google_callback(code: str):
-    """Exchange OAuth code for user info, create session."""
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(500, "Google OAuth not configured")
-
-    async with httpx.AsyncClient() as client:
-        # Exchange code for tokens
-        token_resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": GOOGLE_REDIRECT_URI,
-                "grant_type": "authorization_code",
-            },
-        )
-        if token_resp.status_code != 200:
-            raise HTTPException(400, "OAuth token exchange failed")
-        tokens = token_resp.json()
-
-        # Get user info
-        userinfo_resp = await client.get(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        )
-        if userinfo_resp.status_code != 200:
-            raise HTTPException(400, "Failed to fetch user info")
-        userinfo = userinfo_resp.json()
-
-    session_token = build_session_token({
-        "email": userinfo.get("email", ""),
-        "name": userinfo.get("name", ""),
-        "picture": userinfo.get("picture", ""),
-        "sub": userinfo.get("id", ""),
-    })
-
-    # Store session in Redis
-    if redis_pool:
-        session_key = f"session:{userinfo.get('email', uuid.uuid4().hex)}"
-        await redis_pool.setex(session_key, 86400, session_token)  # 24h TTL
-
-    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard", status_code=303)
-    set_session_cookie(response, session_token)
-    return response
+# Google OAuth is intentionally disabled — credentials not configured.
+# To re-enable: add GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET to .env,
+# register the redirect URI in Google Cloud Console, then restore the
+# /auth/google and /auth/google/callback routes from git history.
 
 
 @app.get("/auth/me")
