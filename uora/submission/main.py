@@ -464,6 +464,56 @@ async def health():
     return {"status": "ok", "service": "submission", "version": "2.0.0"}
 
 
+@app.get("/api/v1/orderbook/snapshot")
+async def orderbook_snapshot():
+    """Proxy /api/v1/orderbook from the most recent live contestant container
+    so the browser can render live depth without needing access to the
+    internal Docker DNS name (sub-<id>:8080).
+
+    Returns: `{ "bids": [...], "asks": [...], "submission_id": "...", "source": "contestant" }`
+    or `{ "bids": [], "asks": [], "source": "idle" }` when nothing is running.
+    """
+    if not redis_pool:
+        return {"bids": [], "asks": [], "source": "idle"}
+    try:
+        # Find the newest submission with a deployed/benchmarking status
+        keys = []
+        async for k in redis_pool.scan_iter(match="submission:*", count=200):
+            keys.append(k)
+        candidates: list[tuple[float, str, str]] = []
+        for k in keys:
+            sub = await redis_pool.hgetall(k)
+            if not sub:
+                continue
+            status = sub.get("status", "")
+            if status not in ("deployed", "benchmarking", "validating", "scored"):
+                continue
+            target = sub.get("target_url") or sub.get("targetUrl") or ""
+            ts_raw = sub.get("scored_at") or sub.get("benchmarking_at") or sub.get("deployed_at") or "0"
+            try:
+                # ISO 8601 timestamps from Redis — sort lexicographically
+                candidates.append((ts_raw, target, k.split(":", 1)[1]))
+            except Exception:
+                continue
+        candidates.sort(reverse=True)
+        for _, target, sid in candidates[:5]:
+            if not target:
+                continue
+            try:
+                async with httpx.AsyncClient(timeout=1.5) as client:
+                    r = await client.get(f"{target}/api/v1/orderbook")
+                    if r.status_code == 200:
+                        data = r.json()
+                        data["submission_id"] = sid
+                        data["source"] = "contestant"
+                        return data
+            except Exception:
+                continue
+        return {"bids": [], "asks": [], "source": "idle"}
+    except Exception as exc:
+        return {"bids": [], "asks": [], "source": "error", "detail": str(exc)}
+
+
 @app.post("/api/v1/submit")
 async def submit_code(
     background_tasks: BackgroundTasks,

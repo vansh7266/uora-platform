@@ -66,6 +66,62 @@ function classify(line: string): LineType {
   return "info";
 }
 
+/**
+ * Convert raw BuildKit / docker stdout into a clean, scannable log.
+ * Strips per-line `#N transferring …` noise, collapses dependency-resolve
+ * spam, and pretty-prints stage transitions.
+ */
+function prettifyBuildLog(raw: string): RenderLine[] {
+  const out: RenderLine[] = [];
+  const lines = raw.split("\n").map((l) => l.replace(/\s+$/, ""));
+  const stageHeading = (n: string, rest: string): RenderLine =>
+    ({ type: "cmd", text: `▶  Stage ${n}  ·  ${rest}` });
+
+  let lastNoise = "";
+  for (const rawLine of lines) {
+    if (!rawLine.trim()) continue;
+
+    // BuildKit emits "#N description" once and then "#N CACHED|DONE|…" later.
+    // Suppress the resolve/transfer/exporting micro-events; surface only the
+    // meaningful step + outcome.
+    const buildkitMatch = rawLine.match(/^#(\d+)\s+(.+)$/);
+    if (buildkitMatch) {
+      const [, n, rest] = buildkitMatch;
+      // Suppress noise
+      if (/^(transferring|resolve|extracting|exporting layers|pushing layers|sha256:)/i.test(rest)) {
+        continue;
+      }
+      if (/^DONE\b/i.test(rest))    { out.push({ type: "success", text: `   ✓  step #${n} done` }); continue; }
+      if (/^CACHED\b/i.test(rest))  { out.push({ type: "info",    text: `   ⟳  step #${n} cached` }); continue; }
+      if (/^ERROR\b/i.test(rest))   { out.push({ type: "error",   text: `   ✗  step #${n} ${rest}` }); continue; }
+      // Stage heading: "[builder 1/5] FROM …" or "[internal] load …"
+      const stageMatch = rest.match(/^\[([^\]]+)\]\s+(.+)$/);
+      if (stageMatch) {
+        const [, stage, rest2] = stageMatch;
+        out.push(stageHeading(n, `${stage} · ${rest2.slice(0, 80)}`));
+        continue;
+      }
+      out.push({ type: "info", text: `   ${rest.slice(0, 90)}` });
+      continue;
+    }
+
+    // Strip ANSI escape codes that occasionally leak through
+    const clean = rawLine.replace(/\x1B\[[0-9;]*m/g, "");
+    if (clean === lastNoise) continue;
+    lastNoise = clean;
+    out.push({ type: classify(clean), text: clean });
+  }
+  return out;
+}
+
+const ICON: Record<LineType, string> = {
+  cmd:     "❯",
+  success: "✓",
+  warn:    "⚠",
+  error:   "✗",
+  info:    "·",
+};
+
 interface BuildLogProps {
   isDemo?: boolean;
 }
@@ -75,6 +131,7 @@ export function BuildLog({ isDemo = false }: BuildLogProps) {
   const [demoLines, setDemoLines] = useState<RenderLine[]>([]);
   const [running, setRunning] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
 
   // ── DEMO: play scripted lines on each demo submission ───────────────────
   useEffect(() => {
@@ -113,10 +170,7 @@ export function BuildLog({ isDemo = false }: BuildLogProps) {
 
   const realLines: RenderLine[] = useMemo(() => {
     if (!latestReal || !latestReal.buildLog) return [];
-    return latestReal.buildLog
-      .split("\n")
-      .filter((l) => l.trim().length > 0)
-      .map((l) => ({ text: l, type: classify(l) }));
+    return prettifyBuildLog(latestReal.buildLog);
   }, [latestReal]);
 
   const realRunning =
@@ -128,9 +182,13 @@ export function BuildLog({ isDemo = false }: BuildLogProps) {
   const isRunning = isDemo ? running : realRunning;
   const isFailed = !isDemo && latestReal?.status === "failed";
 
-  // Auto-scroll
+  // Auto-scroll only the log container, NOT the page.
+  // (scrollIntoView yanks the whole page; setting scrollTop keeps the
+  // user's place in the rest of the dashboard.)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const box = scrollBoxRef.current;
+    if (!box) return;
+    box.scrollTop = box.scrollHeight;
   }, [lines]);
 
   return (
@@ -155,9 +213,12 @@ export function BuildLog({ isDemo = false }: BuildLogProps) {
         </div>
       </PanelHeader>
 
-      <div className="bg-[var(--void-950)] p-4 font-mono text-[11px] min-h-[200px] max-h-[320px] overflow-y-auto rounded-b-md">
+      <div
+        ref={scrollBoxRef}
+        className="bg-[var(--void-950)] py-3 font-mono text-[11px] min-h-[200px] max-h-[320px] overflow-y-auto rounded-b-md"
+      >
         {lines.length === 0 ? (
-          <p className="text-[var(--ink-600)]">
+          <p className="text-[var(--ink-600)] px-4">
             {isDemo
               ? "Submit an engine to stream build logs here."
               : latestReal
@@ -172,19 +233,34 @@ export function BuildLog({ isDemo = false }: BuildLogProps) {
                 initial={{ opacity: 0, x: -4 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.15 }}
-                className="leading-relaxed whitespace-pre-wrap break-all"
-                style={{ color: typeColor[line.type] }}
+                className="flex items-start gap-2 leading-[1.55] whitespace-pre-wrap break-all px-4 hover:bg-[rgba(0,212,255,0.025)]"
               >
-                {line.text}
+                <span
+                  className="select-none text-[var(--ink-600)] tabular-nums w-6 text-right shrink-0"
+                  style={{ fontSize: "9px", paddingTop: "1px" }}
+                >
+                  {(i + 1).toString().padStart(3, "0")}
+                </span>
+                <span
+                  className="select-none shrink-0"
+                  style={{ color: typeColor[line.type], width: "12px" }}
+                >
+                  {ICON[line.type]}
+                </span>
+                <span style={{ color: typeColor[line.type] }} className="flex-1">
+                  {line.text}
+                </span>
               </motion.div>
             ))}
           </AnimatePresence>
         )}
         {isRunning && (
-          <span
-            className="inline-block w-2 h-3.5 bg-[var(--plasma)] animate-blink ml-0.5"
-            style={{ verticalAlign: "text-bottom" }}
-          />
+          <div className="px-4 mt-1">
+            <span
+              className="inline-block w-2 h-3.5 bg-[var(--plasma)] animate-blink ml-0.5"
+              style={{ verticalAlign: "text-bottom" }}
+            />
+          </div>
         )}
         <div ref={bottomRef} />
       </div>

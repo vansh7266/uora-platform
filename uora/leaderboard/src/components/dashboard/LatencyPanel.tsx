@@ -15,7 +15,10 @@ const MUTED  = "#1A3050";
 
 function LatencyLineChart() {
   const { metrics } = useLeaderboardStore();
-  const data = metrics.slice(-60);
+  // Skip the flat-zero idle window between benchmarks.
+  const data = metrics
+    .slice(-60)
+    .filter((m) => m.p99 > 0 || m.p90 > 0 || m.p50 > 0);
 
   const option = useMemo(() => ({
     backgroundColor: "transparent",
@@ -110,7 +113,11 @@ function LatencyLineChart() {
 
 function ThroughputChart() {
   const { metrics } = useLeaderboardStore();
-  const data = metrics.slice(-60);
+  // Drop the long flat-zero idle tail between benchmark runs so the
+  // chart isn't an empty grid when no benchmark is currently active.
+  const data = metrics
+    .slice(-60)
+    .filter((m) => m.throughput > 0);
 
   const option = useMemo(() => ({
     backgroundColor: "transparent",

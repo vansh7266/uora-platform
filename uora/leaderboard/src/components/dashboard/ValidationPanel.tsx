@@ -36,29 +36,31 @@ function OrderbookDepthChart() {
   const { submissions } = useLeaderboardStore();
 
   useEffect(() => {
-    // Prefer the live contestant engine while it is running, fall back to reference LOB.
-    const activeSubmission = submissions.find(
-      (s) => (s.status === "deployed" || s.status === "benchmarking") && s.targetUrl
-    );
-    const refUrl =
-      (activeSubmission?.targetUrl) ||
-      process.env.NEXT_PUBLIC_REFERENCE_ENGINE_URL ||
-      "http://localhost:8081";
+    // Use the submission API's /orderbook/snapshot proxy, which reaches into
+    // the latest active contestant container via the internal Docker network.
+    // This avoids needing public access to sub-<id>:8080 from the browser.
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://localhost:8000";
 
     const fetchSnapshot = async () => {
       try {
-        const res = await fetch(`${refUrl}/api/v1/orderbook`, { cache: "no-store" });
+        const res = await fetch(`${apiUrl}/api/v1/orderbook/snapshot`, {
+          cache: "no-store",
+          credentials: "include",
+        });
         if (!res.ok) return;
         const data = await res.json();
         setBids(cumulate((data.bids ?? []) as SnapshotLevel[], true));
         setAsks(cumulate((data.asks ?? []) as SnapshotLevel[], false));
       } catch {
-        // Reference engine offline; chart stays in empty state.
+        // Backend offline; chart stays in empty state.
       }
     };
     fetchSnapshot();
     const id = setInterval(fetchSnapshot, 2000);
     return () => clearInterval(id);
+    // submissions kept for re-trigger when status changes
   }, [submissions]);
 
 
