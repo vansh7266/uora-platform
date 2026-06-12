@@ -7,6 +7,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    # WeasyPrint system libs — needed for HTML→PDF rendering
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libcairo2 \
+    libffi-dev \
+    shared-mime-info \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml /app/pyproject.toml
