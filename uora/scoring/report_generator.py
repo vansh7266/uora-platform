@@ -787,18 +787,60 @@ class ReportGenerator:
             pdf.cell(60, 3, ts, new_x="LMARGIN", new_y="NEXT", align="R")
 
         # ── Pre-compute values ─────────────────────────────────────────────
-        composite       = float(score_data.get("composite_score") or 0)
-        throughput      = float(score_data.get("throughput") or score_data.get("max_tps") or 0)
-        p50_ms          = float(score_data.get("p50_latency_ms") or 0)
-        p90_ms          = float(score_data.get("p90_latency_ms") or 0)
-        p99_ms          = float(score_data.get("p99_latency_ms") or 0)
-        correctness     = float(score_data.get("correctness_rate") or 0)
-        success_rate    = float(score_data.get("success_rate") or 0)
-        error_rate      = float(score_data.get("error_rate") or 0)
-        anomaly_score_v = float(anomaly.get("score") or score_data.get("anomaly_score") or 0)
-        is_anom         = bool(anomaly.get("is_anomaly")) or anomaly_score_v >= 0.5
-        team            = str(score_data.get("team") or "-")
-        language        = str(score_data.get("language") or "-")
+        # `score_data` may be either flat (the simple shape) or nested (the
+        # actual shape emitted by uora.scoring.engine: throughput.max,
+        # latency.p99_ms, correctness.rate, reliability.success_rate, …).
+        # Handle both so the report works whichever caller passed it.
+        def _num(v, default=0.0):
+            try:
+                if isinstance(v, dict): return default
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+
+        thr_node = score_data.get("throughput")
+        if isinstance(thr_node, dict):
+            throughput = _num(thr_node.get("max") or thr_node.get("avg"))
+        else:
+            throughput = _num(thr_node or score_data.get("max_tps"))
+
+        lat_node = score_data.get("latency") or {}
+        if isinstance(lat_node, dict) and lat_node:
+            p50_ms = _num(lat_node.get("p50_ms"))
+            p90_ms = _num(lat_node.get("p90_ms"))
+            p99_ms = _num(lat_node.get("p99_ms"))
+        else:
+            p50_ms = _num(score_data.get("p50_latency_ms"))
+            p90_ms = _num(score_data.get("p90_latency_ms"))
+            p99_ms = _num(score_data.get("p99_latency_ms"))
+
+        corr_node = score_data.get("correctness")
+        if isinstance(corr_node, dict):
+            correctness = _num(corr_node.get("rate"))
+        else:
+            correctness = _num(corr_node or score_data.get("correctness_rate"))
+
+        rel_node = score_data.get("reliability") or {}
+        if isinstance(rel_node, dict) and rel_node:
+            success_rate = _num(rel_node.get("success_rate"))
+            error_rate   = _num(rel_node.get("error_rate"))
+        else:
+            success_rate = _num(score_data.get("success_rate"))
+            error_rate   = _num(score_data.get("error_rate"))
+
+        anom_node = score_data.get("anomaly")
+        if isinstance(anom_node, dict):
+            anomaly_score_v = _num(anomaly.get("score") or anom_node.get("score"))
+            is_anom         = bool(anomaly.get("is_anomaly") or anom_node.get("is_anomaly")) or anomaly_score_v >= 0.5
+            anom_reason     = anomaly.get("reason") or anom_node.get("reason") or ""
+        else:
+            anomaly_score_v = _num(anomaly.get("score") or score_data.get("anomaly_score"))
+            is_anom         = bool(anomaly.get("is_anomaly")) or anomaly_score_v >= 0.5
+            anom_reason     = anomaly.get("reason") or ""
+
+        composite = _num(score_data.get("composite_score"))
+        team      = str(score_data.get("team") or "-")
+        language  = str(score_data.get("language") or "-")
 
         TOTAL_PAGES = 3
 
@@ -1057,7 +1099,7 @@ class ReportGenerator:
         pdf.set_xy(MARGIN + 6, row_y + 4)
         pdf.cell(0, 5, f"[ {'FLAGGED' if is_anom else 'CLEAN'} ]   score = {anomaly_score_v:.4f}",
                  new_x="LMARGIN", new_y="NEXT")
-        reason = str(anomaly.get("reason") or
+        reason = str(anom_reason or
                      ("Within training manifold." if not is_anom else "Outside training manifold."))[:240]
         text(INK_200)
         pdf.set_font("Helvetica", "", 9)
