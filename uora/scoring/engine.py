@@ -392,7 +392,19 @@ class ScoringEngine:
                 import os
                 os.makedirs(out_dir, exist_ok=True)
                 pdf_path = os.path.join(out_dir, f"report-{submission_id}.pdf")
-                rg.generate_pdf(html_content, pdf_path)
+                rg.generate_pdf(
+                    html_content,
+                    pdf_path,
+                    score_data=score_payload,
+                    submission_id=submission_id,
+                    violations=violations,
+                    anomaly={
+                        "is_anomaly": anomaly_is_anomaly,
+                        "confidence": anomaly_confidence,
+                        "reason": anomaly_reason,
+                        "score": anomaly_score,
+                    },
+                )
                 logger.info(f"Generated PDF report for {submission_id} at {pdf_path}")
             except Exception as e:
                 logger.error(f"Failed to generate report for {submission_id}: {e}")
