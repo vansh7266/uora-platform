@@ -139,9 +139,9 @@ function OrderbookDepthChart() {
     return (
       <div className="flex items-center justify-center h-[200px] text-center px-6">
         <p className="text-[10px] font-mono text-[var(--ink-500)] leading-relaxed max-w-xs">
-          Reference engine snapshot unavailable. Make sure the engine is
-          running on the configured URL — depth fills here as soon as the
-          first order rests.
+          No live orderbook depth.<br/>
+          Submit an engine and depth fills here as soon as the bot fleet starts
+          placing resting orders against it.
         </p>
       </div>
     );
