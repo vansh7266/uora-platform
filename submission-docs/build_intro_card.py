@@ -4,8 +4,9 @@ Generates the UORA intro title-card for the demo video voice-over segment 0.
 Output: UORA-Intro-Card.png at 1920x1080 (16:9 HD) — drop it in the timeline
 and hold for the 30-second intro narration.
 
-Style: Void Terminal — black void background, plasma cyan accents, mono font,
-corner ticks, subtle grid, big UORA wordmark, participant card.
+Style: clean Void Terminal — black void background, plasma cyan accents,
+mono font, corner ticks, sharply zoned layout. Every element lives in its
+own band with explicit padding; nothing overlaps anything else.
 """
 from __future__ import annotations
 import os
@@ -15,20 +16,20 @@ from PIL import Image, ImageDraw, ImageFont
 W, H = 1920, 1080
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-VOID_950 = (5, 11, 20)          # near-black background
-VOID_900 = (10, 21, 37)         # panel background
-VOID_700 = (26, 48, 80)         # subtle border
-PLASMA   = (0, 212, 255)        # primary accent
-PLASMA_D = (0, 158, 189)        # plasma dim
-BID      = (22, 199, 132)       # accent green
-INK_0    = (240, 246, 252)      # primary text
-INK_200  = (200, 209, 217)      # body text
-INK_400  = (139, 148, 158)      # muted
-INK_500  = (110, 118, 129)      # subtle
+VOID_950 = (5, 11, 20)
+VOID_900 = (10, 21, 37)
+VOID_800 = (17, 32, 58)
+VOID_700 = (26, 48, 80)
+PLASMA   = (0, 212, 255)
+PLASMA_D = (0, 158, 189)
+BID      = (22, 199, 132)
+INK_0    = (240, 246, 252)
+INK_200  = (200, 209, 217)
+INK_400  = (139, 148, 158)
+INK_500  = (110, 118, 129)
 
 
 def _try_font(candidates: list[tuple[str, int]]) -> ImageFont.FreeTypeFont:
-    """Pick the first font path that loads, else fall back to PIL default."""
     for path, size in candidates:
         try:
             return ImageFont.truetype(path, size)
@@ -37,150 +38,165 @@ def _try_font(candidates: list[tuple[str, int]]) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def _center_text(draw, text, font, y, color, stroke=None):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    x = (W - (bbox[2] - bbox[0])) // 2 - bbox[0]
+    if stroke:
+        draw.text((x, y), text, font=font, fill=color,
+                  stroke_width=stroke[0], stroke_fill=stroke[1])
+    else:
+        draw.text((x, y), text, font=font, fill=color)
+    return bbox[3] - bbox[1]
+
+
 def build(out: str) -> None:
     img = Image.new("RGB", (W, H), VOID_950)
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # ── 1. Subtle plasma diagonal grid (very low opacity) ─────────────────────
+    # ── Background grid (very subtle diagonal) ────────────────────────────────
     grid = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gdraw = ImageDraw.Draw(grid)
-    step = 64
+    step = 80
     for i in range(-H, W + H, step):
-        gdraw.line([(i, 0), (i + H, H)], fill=(0, 212, 255, 7), width=1)
+        gdraw.line([(i, 0), (i + H, H)], fill=(0, 212, 255, 5), width=1)
     img.paste(grid, (0, 0), grid)
 
-    # ── 2. Centered radial-ish glow behind the wordmark ───────────────────────
-    glow_w, glow_h = 1200, 600
-    glow = Image.new("RGBA", (glow_w, glow_h), (0, 0, 0, 0))
-    gdraw = ImageDraw.Draw(glow)
-    for r in range(8):
-        a = max(0, 35 - r * 4)
-        gdraw.ellipse(
-            [r * 40, r * 25, glow_w - r * 40, glow_h - r * 25],
-            fill=(0, 212, 255, a),
-        )
-    img.paste(glow, ((W - glow_w) // 2, (H - glow_h) // 2 - 60), glow)
+    # ── Outer frame + corner ticks ────────────────────────────────────────────
+    M = 70
+    draw.rectangle([M, M, W - M, H - M], outline=PLASMA + (60,), width=1)
+    tick = 60
+    tw_ = 6
+    for (cx, cy) in [(M, M), (W - M, M), (M, H - M), (W - M, H - M)]:
+        dx = tick if cx == M else -tick
+        dy = tick if cy == M else -tick
+        draw.line([(cx, cy), (cx + dx, cy)], fill=PLASMA, width=tw_)
+        draw.line([(cx, cy), (cx, cy + dy)], fill=PLASMA, width=tw_)
 
-    # ── 3. Outer frame with corner ticks ──────────────────────────────────────
-    M = 60  # outer margin
-    draw.rectangle([M, M, W - M, H - M], outline=PLASMA + (90,), width=1)
-    tick_len = 50
-    tick_w = 6
-    # top-left
-    draw.line([(M, M), (M + tick_len, M)], fill=PLASMA, width=tick_w)
-    draw.line([(M, M), (M, M + tick_len)], fill=PLASMA, width=tick_w)
-    # top-right
-    draw.line([(W - M - tick_len, M), (W - M, M)], fill=PLASMA, width=tick_w)
-    draw.line([(W - M, M), (W - M, M + tick_len)], fill=PLASMA, width=tick_w)
-    # bottom-left
-    draw.line([(M, H - M - tick_len), (M, H - M)], fill=PLASMA, width=tick_w)
-    draw.line([(M, H - M), (M + tick_len, H - M)], fill=PLASMA, width=tick_w)
-    # bottom-right
-    draw.line([(W - M, H - M - tick_len), (W - M, H - M)], fill=PLASMA, width=tick_w)
-    draw.line([(W - M - tick_len, H - M), (W - M, H - M)], fill=PLASMA, width=tick_w)
-
-    # ── 4. Status bar (top) ───────────────────────────────────────────────────
-    bar_top = M + 30
-    font_mono_s = _try_font([
+    # ─── ZONE 1: TOP STATUS BAR (y: 100 - 150) ────────────────────────────────
+    font_mono = _try_font([
         ("/System/Library/Fonts/Menlo.ttc", 22),
-        ("/System/Library/Fonts/Monaco.ttf", 22),
         ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 22),
     ])
-    draw.text((M + 40, bar_top), "// PLATFORM  ONLINE",
-              font=font_mono_s, fill=PLASMA)
-    draw.text((W - M - 320, bar_top), "IICPC  2026  ·  TITLE  CARD",
-              font=font_mono_s, fill=INK_400)
+    bar_y = 118
+    # left: live indicator
+    draw.ellipse([M + 28, bar_y + 8, M + 42, bar_y + 22], fill=BID)
+    draw.text((M + 56, bar_y + 4), "// PLATFORM  ONLINE",
+              font=font_mono, fill=PLASMA)
+    # right: context
+    right_txt = "IICPC  2026  ·  TEAM  UORA"
+    bbox = draw.textbbox((0, 0), right_txt, font=font_mono)
+    draw.text((W - M - 28 - (bbox[2] - bbox[0]), bar_y + 4),
+              right_txt, font=font_mono, fill=INK_500)
+    # divider under status bar
+    draw.line([(M + 28, bar_y + 44), (W - M - 28, bar_y + 44)],
+              fill=PLASMA + (45,), width=1)
 
-    # blinking dot
-    dot_y = bar_top + 7
-    draw.ellipse([M + 22, dot_y, M + 36, dot_y + 14], fill=BID)
-
-    # ── 5. UORA wordmark (HUGE, center) ───────────────────────────────────────
-    # Try to load a heavy display font
+    # ─── ZONE 2: BRAND BLOCK ──────────────────────────────────────────────────
+    # Wordmark — smaller so the rest of the layout breathes.
     font_brand = _try_font([
-        ("/System/Library/Fonts/Helvetica.ttc", 380),
-        ("/System/Library/Fonts/HelveticaNeue.ttc", 380),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 380),
+        ("/System/Library/Fonts/Helvetica.ttc", 280),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 280),
     ])
-    text = "UORA"
-    bbox = draw.textbbox((0, 0), text, font=font_brand, stroke_width=0)
+    wordmark = "UORA"
+    bbox = draw.textbbox((0, 0), wordmark, font=font_brand)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    tx = (W - tw) // 2 - bbox[0]
-    ty = (H - th) // 2 - bbox[1] - 180
-    # subtle plasma shadow
-    draw.text((tx + 4, ty + 4), text, font=font_brand, fill=(0, 158, 189, 90))
-    draw.text((tx, ty), text, font=font_brand, fill=INK_0)
+    word_y = 230
+    word_x = (W - tw) // 2 - bbox[0]
+    draw.text((word_x, word_y), wordmark, font=font_brand, fill=INK_0)
 
-    # ── 6. Subtitle (full name) ───────────────────────────────────────────────
+    # thin plasma underline directly under the wordmark
+    underline_top = word_y + th + 30
+    line_w = 280
+    draw.line([(W // 2 - line_w // 2, underline_top),
+               (W // 2 + line_w // 2, underline_top)],
+              fill=PLASMA, width=3)
+
+    # Subtitle — single line below the wordmark
     font_sub = _try_font([
-        ("/System/Library/Fonts/Menlo.ttc", 34),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 34),
+        ("/System/Library/Fonts/Menlo.ttc", 30),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 30),
     ])
-    sub = "UNIFIED  ORDERBOOK  RESILIENCE  ARCHITECTURE"
-    bbox = draw.textbbox((0, 0), sub, font=font_sub)
-    sw = bbox[2] - bbox[0]
-    sy = ty + th + 60
-    draw.text(((W - sw) // 2 - bbox[0], sy), sub, font=font_sub, fill=PLASMA)
+    sub_y = underline_top + 26
+    _center_text(draw,
+                 "UNIFIED  ORDERBOOK  RESILIENCE  ARCHITECTURE",
+                 font_sub, sub_y, PLASMA)
 
-    # divider line under subtitle
-    line_w = 460
-    cy = sy + 80
-    draw.line([(W // 2 - line_w // 2, cy), (W // 2 + line_w // 2, cy)],
-              fill=(0, 212, 255, 90), width=2)
+    # Tagline — short, below subtitle
+    font_tag = _try_font([
+        ("/System/Library/Fonts/Helvetica.ttc", 22),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22),
+    ])
+    tag_y = sub_y + 64
+    _center_text(draw,
+                 "Matching-engine benchmarking at microsecond scale",
+                 font_tag, tag_y, INK_400)
 
-    # ── 7. Participant card (bottom) ──────────────────────────────────────────
-    card_w, card_h = 960, 220
+    # ─── ZONE 3: PARTICIPANT CARD ─────────────────────────────────────────────
+    card_w, card_h = 1000, 230
     card_x = (W - card_w) // 2
-    card_y = H - M - 80 - card_h
+    card_y = 700
 
-    # background
-    card_bg = Image.new("RGBA", (card_w, card_h), VOID_900 + (255,))
-    img.paste(card_bg, (card_x, card_y), card_bg)
-    # border
+    # solid panel background
+    draw.rectangle([card_x, card_y, card_x + card_w, card_y + card_h],
+                   fill=VOID_900)
+    # plasma left stripe (lives INSIDE the card, not over the border)
+    draw.rectangle([card_x, card_y, card_x + 8, card_y + card_h], fill=PLASMA)
+    # 1-px border around the whole card
     draw.rectangle([card_x, card_y, card_x + card_w, card_y + card_h],
                    outline=PLASMA, width=2)
-    # left plasma stripe
-    draw.rectangle([card_x, card_y, card_x + 6, card_y + card_h], fill=PLASMA)
 
-    # card label
-    draw.text((card_x + 36, card_y + 22),
+    # card label (top zone)
+    draw.text((card_x + 40, card_y + 24),
               "// SUBMITTED  BY",
-              font=font_mono_s, fill=INK_500)
+              font=font_mono, fill=INK_500)
 
-    # NAME (big)
+    # NAME — big
     font_name = _try_font([
-        ("/System/Library/Fonts/Helvetica.ttc", 64),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 64),
+        ("/System/Library/Fonts/Helvetica.ttc", 52),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52),
     ])
-    draw.text((card_x + 36, card_y + 55), "VANSH  GUPTA",
+    draw.text((card_x + 40, card_y + 60), "VANSH  GUPTA",
               font=font_name, fill=INK_0)
 
-    # meta rows
+    # horizontal divider inside the card
+    div_y = card_y + 138
+    draw.line([(card_x + 40, div_y), (card_x + card_w - 40, div_y)],
+              fill=VOID_700, width=1)
+
+    # meta rows: two columns
     font_meta_l = _try_font([
-        ("/System/Library/Fonts/Menlo.ttc", 24),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 24),
+        ("/System/Library/Fonts/Menlo.ttc", 21),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 21),
     ])
     font_meta_v = _try_font([
-        ("/System/Library/Fonts/Menlo.ttc", 24),
-        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 24),
+        ("/System/Library/Fonts/Menlo.ttc", 21),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 21),
     ])
-    meta = [
-        ("INSTITUTION", "IIIT Bhopal  ·  Information Technology, 2nd Year"),
-        ("TEAM",        "UORA  ·  Solo participant"),
-    ]
-    my = card_y + 138
-    for label, value in meta:
-        draw.text((card_x + 36, my), label, font=font_meta_l, fill=PLASMA)
-        draw.text((card_x + 240, my), value, font=font_meta_v, fill=INK_200)
-        my += 32
+    row_y = div_y + 16
+    # Institution
+    draw.text((card_x + 40, row_y), "INSTITUTION",
+              font=font_meta_l, fill=PLASMA)
+    draw.text((card_x + 230, row_y),
+              "IIIT Bhopal  ·  Information Technology, 2nd Year",
+              font=font_meta_v, fill=INK_200)
+    # Team
+    draw.text((card_x + 40, row_y + 32), "TEAM",
+              font=font_meta_l, fill=PLASMA)
+    draw.text((card_x + 230, row_y + 32), "UORA  ·  Solo participant",
+              font=font_meta_v, fill=INK_200)
 
-    # ── 8. Bottom-right scoreboard ────────────────────────────────────────────
-    draw.text((M + 40, H - M - 40),
-              "github.com/vansh7266/uora-platform  ·  http://35.254.55.195:3000",
-              font=font_mono_s, fill=INK_500)
-    draw.text((W - M - 270, H - M - 40),
-              "v2.0  ·  PRODUCTION",
-              font=font_mono_s, fill=BID)
+    # ─── ZONE 4: FOOTER (y: 980 - 1010) ───────────────────────────────────────
+    foot_y = H - M - 50
+    # divider above footer
+    draw.line([(M + 28, foot_y - 20), (W - M - 28, foot_y - 20)],
+              fill=PLASMA + (45,), width=1)
+    draw.text((M + 28, foot_y),
+              "github.com/vansh7266/uora-platform  ·  35.254.55.195:3000",
+              font=font_mono, fill=INK_500)
+    right_foot = "v2.0  ·  PRODUCTION"
+    bbox = draw.textbbox((0, 0), right_foot, font=font_mono)
+    draw.text((W - M - 28 - (bbox[2] - bbox[0]), foot_y),
+              right_foot, font=font_mono, fill=BID)
 
     img.save(out, "PNG", optimize=True)
 
