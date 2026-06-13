@@ -717,7 +717,10 @@ class ReportGenerator:
         from datetime import datetime, timezone
 
         pdf = FPDF(format="A4", unit="mm")
-        pdf.set_auto_page_break(auto=True, margin=14)
+        # Each section explicitly calls `pdf.add_page()`; auto-page-break would
+        # otherwise insert a fresh blank page every time we set_y(PAGE_H - …)
+        # to draw the footer chrome.
+        pdf.set_auto_page_break(auto=False)
 
         # ── UORA Void Terminal palette ─────────────────────────────────────
         VOID_950 = (5, 11, 20)      # background
